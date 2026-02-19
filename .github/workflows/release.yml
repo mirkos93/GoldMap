@@ -56,8 +56,26 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Check CurseForge publish configuration
+        id: cf_check
+        shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          CF_GAME_VERSIONS: ${{ vars.CF_GAME_VERSIONS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${CF_API_TOKEN:-}" && -n "${CF_PROJECT_ID:-}" && -n "${CF_GAME_VERSIONS:-}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "CurseForge publish is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "CurseForge publish disabled: missing token and/or vars."
+          fi
+
       - name: Upload to CurseForge
-        if: ${{ secrets.CF_API_TOKEN != '' && vars.CF_PROJECT_ID != '' && vars.CF_GAME_VERSIONS != '' }}
+        if: ${{ steps.cf_check.outputs.enabled == 'true' }}
         uses: itsmeow/curseforge-upload@v3
         with:
           file_path: ${{ env.ZIP_NAME }}
@@ -65,3 +83,7 @@ jobs:
           project_id: ${{ vars.CF_PROJECT_ID }}
           game_versions: ${{ vars.CF_GAME_VERSIONS }}
           token: ${{ secrets.CF_API_TOKEN }}
+
+      - name: Skip CurseForge publish
+        if: ${{ steps.cf_check.outputs.enabled != 'true' }}
+        run: echo "Skipping CurseForge upload (optional configuration not set)."
