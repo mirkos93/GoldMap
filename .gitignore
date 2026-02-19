@@ -1,0 +1,53 @@
+# OS / filesystem noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.swo
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+*.secret
+*.secrets
+*.credentials
+
+# Logs / local runtime files
+*.log
+*.tmp
+*.bak
+scripts/output/
+
+# Local dataset fabrication pipeline (keep local, don't publish)
+scripts/extract_goldmap_data.sh
+scripts/generate_lua_data.py
+scripts/generate_gathering_data.py
+
+# Build / release artifacts
+dist/
+build/
+release/
+*.zip
+
+# WoW local test copies (if working inside game folder mirrors)
+WTF/
+Cache/

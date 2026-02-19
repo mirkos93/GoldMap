@@ -1,0 +1,67 @@
+name: Release Addon
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Addon Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ADDON_NAME="GoldMap"
+          STAGE_DIR="$RUNNER_TEMP/$ADDON_NAME"
+          ZIP_NAME="${ADDON_NAME}-${GITHUB_REF_NAME}.zip"
+
+          rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR"
+
+          cp GoldMap.toc "$STAGE_DIR/"
+          cp -R AHScan "$STAGE_DIR/"
+          cp -R Core "$STAGE_DIR/"
+          cp -R Data "$STAGE_DIR/"
+          cp -R Map "$STAGE_DIR/"
+          cp -R Media "$STAGE_DIR/"
+          cp -R UI "$STAGE_DIR/"
+          cp -R Utils "$STAGE_DIR/"
+
+          [ -f README.md ] && cp README.md "$STAGE_DIR/" || true
+          [ -f LICENSE ] && cp LICENSE "$STAGE_DIR/" || true
+          [ -f LICENSE.txt ] && cp LICENSE.txt "$STAGE_DIR/" || true
+
+          (
+            cd "$RUNNER_TEMP"
+            zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" "$ADDON_NAME"
+          )
+
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Upload to CurseForge
+        if: ${{ secrets.CF_API_TOKEN != '' && vars.CF_PROJECT_ID != '' && vars.CF_GAME_VERSIONS != '' }}
+        uses: itsmeow/curseforge-upload@v3
+        with:
+          file_path: ${{ env.ZIP_NAME }}
+          game_endpoint: "wow"
+          project_id: ${{ vars.CF_PROJECT_ID }}
+          game_versions: ${{ vars.CF_GAME_VERSIONS }}
+          token: ${{ secrets.CF_API_TOKEN }}

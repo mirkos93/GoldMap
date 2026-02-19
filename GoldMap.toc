@@ -1,0 +1,39 @@
+## Interface: 11507
+## Title: GoldMap
+## Notes: Highlights profitable farm targets on the World Map using seed droprates and AH prices.
+## Author: Mirko + Codex
+## Version: 0.1.0
+## SavedVariables: GoldMapDB, GoldMapPriceCache
+## Dependencies: Auctionator
+
+Utils/Ids.lua
+Utils/Cache.lua
+Utils/Throttle.lua
+Utils/MapProjection.lua
+
+Data/Zones.lua
+Data/SeedDrops.lua
+Data/Spawns.lua
+Data/GatherNodes.lua
+Data/GatherSpawns.lua
+
+Core/Init.lua
+Core/Evaluator.lua
+Core/GatherEvaluator.lua
+
+AHScan/Utils.lua
+AHScan/Cache.lua
+AHScan/Scanner.lua
+
+UI/PinTooltip.lua
+UI/MobTooltip.lua
+UI/MinimapButton.lua
+UI/WorldMapButton.lua
+UI/Options.lua
+UI/FilterPanel.lua
+UI/Welcome.lua
+UI/UnitOverlay.lua
+
+Map/WorldMapPins.lua
+Map/MinimapPins.lua
+Core/Events.lua
