@@ -170,4 +170,5 @@ Expected secrets/vars:
 
 ## License
 
-Add project license/distribution terms before broad public release.
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+See `LICENSE` for full terms.
