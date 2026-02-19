@@ -49,6 +49,8 @@ So you can compare farms by average value, not just by single lucky drops.
 ## Auction House Data
 
 - Auctionator is required.
+- Auctionator GitHub: https://github.com/TheMouseNest/Auctionator/
+- Auctionator CurseForge: https://www.curseforge.com/wow/addons/auctionator
 - Run Auctionator scans, then use `/goldmap scan` to sync into GoldMap.
 - If no market data exists yet, items show “No price yet” and Estimated Gold shows “--”.
 - Hold `Shift` on tooltips for detailed market diagnostics.

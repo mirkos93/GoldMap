@@ -47,6 +47,11 @@ If your goal is simple, **more gold per hour with less guesswork**, GoldMap is b
 6. Open map filters and tune your farm strategy
 7. Follow high-value pins on map/minimap
 
+### Auctionator Links
+
+- GitHub: https://github.com/TheMouseNest/Auctionator/
+- CurseForge: https://www.curseforge.com/wow/addons/auctionator
+
 ## Recommended Flow (Fastest Results)
 
 1. Run an Auctionator scan first
