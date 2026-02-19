@@ -120,37 +120,11 @@ This section is technical and intended for contributors.
 
 ### Runtime Data Flow
 
-1. Offline extraction builds compact Lua data from MySQL
-2. Auctionator collects market data
-3. GoldMap syncs tracked item prices from Auctionator cache
-4. Evaluators compute EV for mobs and gather nodes
-5. Filters are applied
-6. Pins/tooltips/overlays render only matching targets
-
-### Data Extraction (MySQL -> Lua)
-
-Set environment variables:
-
-```bash
-export GM_DB_HOST=localhost
-export GM_DB_USER=mirko
-export GM_DB_PASS='your_password'
-export GM_DB_NAME=wow
-```
-
-Run extraction pipeline:
-
-```bash
-./scripts/extract_goldmap_data.sh
-```
-
-Generated datasets:
-
-- `Data/SeedDrops.lua`
-- `Data/Spawns.lua`
-- `Data/Zones.lua`
-- `Data/GatherNodes.lua`
-- `Data/GatherSpawns.lua`
+1. Auctionator collects market data
+2. GoldMap syncs tracked item prices from Auctionator cache
+3. Evaluators compute EV for mobs and gather nodes
+4. Filters are applied
+5. Pins/tooltips/overlays render only matching targets
 
 ### Release Automation
 
