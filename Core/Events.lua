@@ -20,12 +20,14 @@ local function InitializeRuntime()
   SafeInit(GoldMap.Evaluator, "Evaluator")
   SafeInit(GoldMap.GatherEvaluator, "GatherEvaluator")
   SafeInit(GoldMap.Scanner, "Scanner")
+  SafeInit(GoldMap.ScanAdvisor, "ScanAdvisor")
   SafeInit(GoldMap.Options, "Options")
   SafeInit(GoldMap.FilterPanel, "FilterPanel")
   SafeInit(GoldMap.Welcome, "Welcome")
   SafeInit(GoldMap.MinimapButton, "MinimapButton")
   SafeInit(GoldMap.WorldMapButton, "WorldMapButton")
   SafeInit(GoldMap.MobTooltip, "MobTooltip")
+  SafeInit(GoldMap.ItemTooltip, "ItemTooltip")
   SafeInit(GoldMap.UnitOverlay, "UnitOverlay")
   SafeInit(GoldMap.WorldMapPins, "WorldMapPins")
   SafeInit(GoldMap.MinimapPins, "MinimapPins")
@@ -62,6 +64,15 @@ local function SlashCommand(msg)
       GoldMap.MinimapPins:RequestRefresh()
     end
     GoldMap:NotifyFiltersChanged()
+    return
+  end
+
+  if command == "advisor" then
+    if GoldMap.ScanAdvisor and GoldMap.ScanAdvisor.CheckNow then
+      GoldMap.ScanAdvisor:CheckNow(true)
+    else
+      GoldMap:Printf("Scan advisor module unavailable.")
+    end
     return
   end
 
@@ -114,12 +125,23 @@ frame:SetScript("OnEvent", function(_, eventName, ...)
     return
   end
 
+  if eventName == "MODIFIER_STATE_CHANGED" then
+    local key = ...
+    if key == "LSHIFT" or key == "RSHIFT" then
+      if GoldMap.PinTooltip and GoldMap.PinTooltip.RefreshIfShown then
+        GoldMap.PinTooltip:RefreshIfShown()
+      end
+    end
+    return
+  end
+
 end)
 
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("AUCTION_HOUSE_SHOW")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+frame:RegisterEvent("MODIFIER_STATE_CHANGED")
 
 SLASH_GOLDMAP1 = "/goldmap"
 SLASH_GOLDMAP2 = "/gmfarm"

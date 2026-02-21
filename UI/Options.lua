@@ -161,6 +161,9 @@ function GoldMap.Options:EnsureHelpFrame()
       .. "Clear labels and colors\n"
       .. "- Data reliability: Unknown / Low / Medium / High (color coded).\n"
       .. "- Likely to sell: None / Low / Medium / High (color coded).\n"
+      .. "- Sell speed aims to reflect this rule-of-thumb: High ~ under 12h, Medium ~ within 24h, Low ~ over 24h.\n"
+      .. "- The same market signals can be shown directly on item tooltips (bags/AH/links).\n"
+      .. "- Source labels (Seed DB) are intentionally hidden unless both Shift and Debug are enabled.\n"
       .. "- Hold Shift on a tooltip to see technical details.\n\n"
       .. "What Estimated Gold means\n"
       .. "- Estimated Gold = expected value per kill/node, based on listed drop/yield chances and current Auction House price snapshots.\n"
@@ -170,12 +173,15 @@ function GoldMap.Options:EnsureHelpFrame()
       .. "How filters work\n"
       .. "- Match all selected filters (Narrow): stricter results.\n"
       .. "- Match any selected filter (Broad): a target can pass level OR drops OR Estimated Gold rules.\n"
+      .. "- Mob fight difficulty combines mob rank (Normal/Elite/Boss) and level gap versus your character.\n"
+      .. "- Use Fight Type to separate solo farms from group-recommended targets.\n"
       .. "- Mob and Gathering have separate filter fields in the World Map filter panel.\n"
       .. "- Use Minimum Data Reliability to hide weak market data.\n"
       .. "- Item rows in tooltips respect item filters (chance, quality, minimum item price).\n\n"
       .. "Useful tips\n"
       .. "- Use Minimum Item Price to remove low-value clutter.\n"
       .. "- Use Minimum Estimated Gold to focus on higher value farms.\n"
+      .. "- Scan Advisor warns when market data is getting stale and it is a good time to visit AH.\n"
       .. "- GoldMap always hides non-attackable/non-farm NPCs."
   )
 
@@ -493,9 +499,16 @@ function GoldMap.Options:Init()
   local maxTooltipSlider = MakeSlider(tooltipSection, "GoldMapTooltipLinesSlider", 1, 20, 1, 280)
   maxTooltipSlider:SetPoint("TOPLEFT", maxTooltipLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
 
-  local tooltipBottom = maxTooltipSlider:GetBottom() or 0
+  local showItemTooltipSignals = MakeCheckbox(
+    tooltipSection,
+    "Show GoldMap market signals in item tooltips",
+    "Adds price, likely-to-sell, and reliability lines on item tooltips (bags, AH, links)"
+  )
+  showItemTooltipSignals:SetPoint("TOPLEFT", maxTooltipSlider, "BOTTOMLEFT", 0, -12)
+
+  local tooltipBottom = showItemTooltipSignals:GetBottom() or 0
   local tooltipTop = tooltipSection:GetTop() or 0
-  tooltipSection:SetHeight(math.max(320, tooltipTop - tooltipBottom + 48))
+  tooltipSection:SetHeight(math.max(360, tooltipTop - tooltipBottom + 48))
 
   local scanTitle = scanSection:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   scanTitle:SetPoint("TOPLEFT", 8, -8)
@@ -521,16 +534,35 @@ function GoldMap.Options:Init()
   local queryDelaySlider = MakeSlider(scanSection, "GoldMapQueryDelaySlider", 0, 14, 1, 280)
   queryDelaySlider:SetPoint("TOPLEFT", queryDelayLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
 
+  local advisorEnabled = MakeCheckbox(scanSection, "Enable market freshness advisor notifications", "Suggests when it's a good time to run an AH scan")
+  advisorEnabled:SetPoint("TOPLEFT", queryDelaySlider, "BOTTOMLEFT", 0, -8)
+
+  local advisorIntervalLabel = scanSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  advisorIntervalLabel:SetPoint("TOPLEFT", advisorEnabled, "BOTTOMLEFT", 6, -18)
+  advisorIntervalLabel:SetText("Advisor check interval (minutes):")
+  local advisorIntervalInput = MakeEditBox(scanSection, 64, false)
+  advisorIntervalInput:SetPoint("LEFT", advisorIntervalLabel, "RIGHT", 10, 0)
+  local advisorIntervalSlider = MakeSlider(scanSection, "GoldMapAdvisorIntervalSlider", 2, 60, 1, 280)
+  advisorIntervalSlider:SetPoint("TOPLEFT", advisorIntervalLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local advisorCooldownLabel = scanSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  advisorCooldownLabel:SetPoint("TOPLEFT", advisorIntervalSlider, "BOTTOMLEFT", 8, -36)
+  advisorCooldownLabel:SetText("Advisor notification cooldown (minutes):")
+  local advisorCooldownInput = MakeEditBox(scanSection, 64, false)
+  advisorCooldownInput:SetPoint("LEFT", advisorCooldownLabel, "RIGHT", 10, 0)
+  local advisorCooldownSlider = MakeSlider(scanSection, "GoldMapAdvisorCooldownSlider", 5, 180, 5, 280)
+  advisorCooldownSlider:SetPoint("TOPLEFT", advisorCooldownLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
   local syncNowButton = CreateFrame("Button", nil, scanSection, "UIPanelButtonTemplate")
   syncNowButton:SetSize(220, 24)
-  syncNowButton:SetPoint("TOPLEFT", queryDelaySlider, "BOTTOMLEFT", 8, -26)
+  syncNowButton:SetPoint("TOPLEFT", advisorCooldownSlider, "BOTTOMLEFT", 8, -26)
   syncNowButton:SetText("Sync From Auctionator Now")
 
   local scanHint = scanSection:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   scanHint:SetPoint("TOPLEFT", syncNowButton, "BOTTOMLEFT", 0, -14)
   scanHint:SetWidth(520)
   scanHint:SetJustifyH("LEFT")
-  scanHint:SetText("How to keep data fresh: run Auctionator scans regularly, then use /goldmap scan to sync. Older Auctionator prices are ignored based on the max age above.")
+  scanHint:SetText("How to keep data fresh: run Auctionator scans regularly, then use /goldmap scan to sync. Advisor warns when stale/missing market coverage suggests another AH visit.")
 
   local marketStatus = scanSection:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   marketStatus:SetPoint("TOPLEFT", scanHint, "BOTTOMLEFT", 0, -14)
@@ -541,7 +573,7 @@ function GoldMap.Options:Init()
 
   local scanBottom = marketStatus:GetBottom() or 0
   local scanTop = scanSection:GetTop() or 0
-  scanSection:SetHeight(math.max(420, scanTop - scanBottom + 48))
+  scanSection:SetHeight(math.max(620, scanTop - scanBottom + 48))
 
   local helpTitle = helpSection:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   helpTitle:SetPoint("TOPLEFT", 8, -8)
@@ -618,6 +650,22 @@ function GoldMap.Options:Init()
       )
     end
 
+    if GoldMap.ScanAdvisor and type(GoldMap.ScanAdvisor.GetLastReport) == "function" then
+      local report = GoldMap.ScanAdvisor:GetLastReport()
+      if not report and type(GoldMap.ScanAdvisor.RefreshReport) == "function" then
+        report = GoldMap.ScanAdvisor:RefreshReport()
+      end
+      if report then
+        lines[#lines + 1] = string.format(
+          "Advisor: |c%s%s|r  |  Missing %s  |  Stale>24h %s",
+          report.colorCode or "ff33ff66",
+          report.label or "GREEN",
+          string.format("%.0f%%", (tonumber(report.missingRatio) or 0) * 100),
+          string.format("%.0f%%", (tonumber(report.stale24hRatio) or 0) * 100)
+        )
+      end
+    end
+
     marketStatus:SetText(table.concat(lines, "\n"))
   end
 
@@ -634,6 +682,8 @@ function GoldMap.Options:Init()
     showMinimapPins:SetChecked(GoldMap.db.ui.showMinimapPins)
     showMinimapButton:SetChecked(not GoldMap.db.ui.hideMinimapButton)
     showNoPrice:SetChecked(GoldMap.db.filters.showNoPricePins)
+    showItemTooltipSignals:SetChecked(GoldMap.db.ui.showItemTooltipMarket ~= false)
+    advisorEnabled:SetChecked(GoldMap.db.scanner.scanAdvisorEnabled ~= false)
     GoldMap.db.scanner.useAuctionatorData = true
     debugMode:SetChecked(GoldMap:IsDebugEnabled())
 
@@ -649,6 +699,8 @@ function GoldMap.Options:Init()
     miniOreSpaceInput:SetNumber(GoldMap.db.ui.minimapOrePinSpacing or GoldMap.defaults.ui.minimapOrePinSpacing or 14)
     miniMobSpaceInput:SetNumber(GoldMap.db.ui.minimapMobPinSpacing or GoldMap.defaults.ui.minimapMobPinSpacing or 12)
     queryDelayInput:SetText(tostring(math.floor((GoldMap.db.scanner.auctionatorMaxAgeDays or GoldMap.defaults.scanner.auctionatorMaxAgeDays or 7) + 0.5)))
+    advisorIntervalInput:SetText(tostring(math.floor((GoldMap.db.scanner.advisorIntervalMinutes or GoldMap.defaults.scanner.advisorIntervalMinutes or 10) + 0.5)))
+    advisorCooldownInput:SetText(tostring(math.floor((GoldMap.db.scanner.advisorNotifyCooldownMinutes or GoldMap.defaults.scanner.advisorNotifyCooldownMinutes or 45) + 0.5)))
 
     maxPinsSlider:SetValue(GoldMap.db.ui.maxVisiblePins)
     minimapPinsSlider:SetValue(GoldMap.db.ui.minimapMaxPins)
@@ -662,6 +714,8 @@ function GoldMap.Options:Init()
     miniOreSpaceSlider:SetValue(GoldMap.db.ui.minimapOrePinSpacing or GoldMap.defaults.ui.minimapOrePinSpacing or 14)
     miniMobSpaceSlider:SetValue(GoldMap.db.ui.minimapMobPinSpacing or GoldMap.defaults.ui.minimapMobPinSpacing or 12)
     queryDelaySlider:SetValue(GoldMap.db.scanner.auctionatorMaxAgeDays or GoldMap.defaults.scanner.auctionatorMaxAgeDays or 7)
+    advisorIntervalSlider:SetValue(GoldMap.db.scanner.advisorIntervalMinutes or GoldMap.defaults.scanner.advisorIntervalMinutes or 10)
+    advisorCooldownSlider:SetValue(GoldMap.db.scanner.advisorNotifyCooldownMinutes or GoldMap.defaults.scanner.advisorNotifyCooldownMinutes or 45)
 
     RefreshMarketStatus()
     RefreshLuaDebugButton()
@@ -681,6 +735,8 @@ function GoldMap.Options:Init()
     SetSliderLabels("GoldMapMiniMobSpacingSlider", "Minimap Mob Spacing", "6", "40")
     SetSliderLabels("GoldMapTooltipLinesSlider", "Max Tooltip Drops", "1", "20")
     SetSliderLabels("GoldMapQueryDelaySlider", "Auctionator Max Age (days)", "0", "14")
+    SetSliderLabels("GoldMapAdvisorIntervalSlider", "Advisor Check Interval (min)", "2", "60")
+    SetSliderLabels("GoldMapAdvisorCooldownSlider", "Advisor Notification Cooldown (min)", "5", "180")
   end
 
   panel:SetScript("OnShow", function()
@@ -709,6 +765,25 @@ function GoldMap.Options:Init()
   showNoPrice:SetScript("OnClick", function(selfButton)
     GoldMap.db.filters.showNoPricePins = selfButton:GetChecked() and true or false
     GoldMap:NotifyFiltersChanged()
+  end)
+
+  showItemTooltipSignals:SetScript("OnClick", function(selfButton)
+    GoldMap.db.ui.showItemTooltipMarket = selfButton:GetChecked() and true or false
+    if GoldMap.ItemTooltip and GameTooltip then
+      GoldMap.ItemTooltip:ClearMarker(GameTooltip)
+      if GameTooltip:IsShown() and GoldMap.db.ui.showItemTooltipMarket ~= false then
+        GoldMap.ItemTooltip:TryInject(GameTooltip)
+      end
+    end
+  end)
+
+  advisorEnabled:SetScript("OnClick", function(selfButton)
+    GoldMap.db.scanner.scanAdvisorEnabled = selfButton:GetChecked() and true or false
+    if GoldMap.ScanAdvisor and GoldMap.ScanAdvisor.RestartTickerIfNeeded then
+      GoldMap.ScanAdvisor:RestartTickerIfNeeded()
+      GoldMap.ScanAdvisor:CheckNow(false)
+    end
+    SyncControlsFromDB()
   end)
 
   debugMode:SetScript("OnClick", function(selfButton)
@@ -832,6 +907,25 @@ function GoldMap.Options:Init()
     selfBox:ClearFocus()
   end)
 
+  advisorIntervalInput:SetScript("OnEnterPressed", function(selfBox)
+    local minutes = tonumber(selfBox:GetText()) or (GoldMap.defaults.scanner.advisorIntervalMinutes or 10)
+    minutes = Clamp(math.floor(minutes + 0.5), 2, 60)
+    GoldMap.db.scanner.advisorIntervalMinutes = minutes
+    if GoldMap.ScanAdvisor and GoldMap.ScanAdvisor.RestartTickerIfNeeded then
+      GoldMap.ScanAdvisor:RestartTickerIfNeeded()
+    end
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+  end)
+
+  advisorCooldownInput:SetScript("OnEnterPressed", function(selfBox)
+    local minutes = tonumber(selfBox:GetText()) or (GoldMap.defaults.scanner.advisorNotifyCooldownMinutes or 45)
+    minutes = Clamp(math.floor(minutes + 0.5), 5, 180)
+    GoldMap.db.scanner.advisorNotifyCooldownMinutes = minutes
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+  end)
+
   maxPinsSlider:SetScript("OnValueChanged", function(_, value)
     if syncingControls then
       return
@@ -939,6 +1033,25 @@ function GoldMap.Options:Init()
     SyncControlsFromDB()
   end)
 
+  advisorIntervalSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.scanner.advisorIntervalMinutes = Clamp(math.floor(value + 0.5), 2, 60)
+    if GoldMap.ScanAdvisor and GoldMap.ScanAdvisor.RestartTickerIfNeeded then
+      GoldMap.ScanAdvisor:RestartTickerIfNeeded()
+    end
+    SyncControlsFromDB()
+  end)
+
+  advisorCooldownSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.scanner.advisorNotifyCooldownMinutes = Clamp(math.floor(value + 0.5), 5, 180)
+    SyncControlsFromDB()
+  end)
+
   syncNowButton:SetScript("OnClick", function()
     if GoldMap.Scanner and GoldMap.Scanner.StartSeedScan then
       GoldMap.Scanner:StartSeedScan(true)
@@ -986,6 +1099,12 @@ function GoldMap.Options:Init()
   end)
 
   GoldMap:RegisterMessage("SCAN_STATUS", function()
+    if panel:IsShown() then
+      C_Timer.After(0.05, RefreshMarketStatus)
+    end
+  end)
+
+  GoldMap:RegisterMessage("SCAN_ADVISOR_UPDATED", function()
     if panel:IsShown() then
       C_Timer.After(0.05, RefreshMarketStatus)
     end

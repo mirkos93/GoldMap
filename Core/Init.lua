@@ -43,6 +43,10 @@ GoldMap.defaults = {
     gatherMaxDropRate = 100,
     minMobLevel = 1,
     maxMobLevel = 63,
+    hideRareMobs = false,
+    difficultyScope = "ANY",
+    minDifficultyTier = 1,
+    maxDifficultyTier = 5,
     onlyKillableForPlayer = true,
     filterMode = "ALL",
     minEVGold = 0,
@@ -63,6 +67,7 @@ GoldMap.defaults = {
     showPins = true,
     showMinimapPins = true,
     hideMinimapButton = false,
+    showItemTooltipMarket = true,
     filterSimpleMode = true,
     maxTooltipItems = 6,
     maxVisiblePins = 2500,
@@ -80,6 +85,15 @@ GoldMap.defaults = {
     useAuctionatorData = true,
     auctionatorMaxAgeDays = 7,
     staleSeconds = 6 * 60 * 60,
+    scanAdvisorEnabled = true,
+    advisorIntervalMinutes = 10,
+    advisorNotifyCooldownMinutes = 45,
+    advisorYellowHours = 12,
+    advisorRedHours = 24,
+    advisorYellowStaleRatio = 0.30,
+    advisorRedStaleRatio = 0.55,
+    advisorYellowMissingRatio = 0.20,
+    advisorRedMissingRatio = 0.40,
   },
   customPresets = {},
   debug = {
@@ -164,10 +178,21 @@ function GoldMap:InitializeSavedVariables()
   -- Keep the setting hard-locked for stability and UX simplicity.
   if self.db and self.db.filters then
     self.db.filters.onlyKillableForPlayer = true
+    self.db.filters.hideRareMobs = self.db.filters.hideRareMobs == true
   end
 
   if self.db and self.db.scanner then
     self.db.scanner.useAuctionatorData = true
+    self.db.scanner.auctionatorMaxAgeDays = math.max(0, math.min(14, math.floor(tonumber(self.db.scanner.auctionatorMaxAgeDays) or 7)))
+    self.db.scanner.scanAdvisorEnabled = self.db.scanner.scanAdvisorEnabled ~= false
+    self.db.scanner.advisorIntervalMinutes = math.max(2, math.min(60, math.floor(tonumber(self.db.scanner.advisorIntervalMinutes) or 10)))
+    self.db.scanner.advisorNotifyCooldownMinutes = math.max(5, math.min(180, math.floor(tonumber(self.db.scanner.advisorNotifyCooldownMinutes) or 45)))
+    self.db.scanner.advisorYellowHours = math.max(6, math.min(72, math.floor(tonumber(self.db.scanner.advisorYellowHours) or 12)))
+    self.db.scanner.advisorRedHours = math.max(self.db.scanner.advisorYellowHours, math.min(120, math.floor(tonumber(self.db.scanner.advisorRedHours) or 24)))
+    self.db.scanner.advisorYellowStaleRatio = math.max(0.05, math.min(0.95, tonumber(self.db.scanner.advisorYellowStaleRatio) or 0.30))
+    self.db.scanner.advisorRedStaleRatio = math.max(self.db.scanner.advisorYellowStaleRatio, math.min(0.99, tonumber(self.db.scanner.advisorRedStaleRatio) or 0.55))
+    self.db.scanner.advisorYellowMissingRatio = math.max(0.05, math.min(0.95, tonumber(self.db.scanner.advisorYellowMissingRatio) or 0.20))
+    self.db.scanner.advisorRedMissingRatio = math.max(self.db.scanner.advisorYellowMissingRatio, math.min(0.99, tonumber(self.db.scanner.advisorRedMissingRatio) or 0.40))
   end
 
   if self.db and self.db.filters and self.db.meta and not self.db.meta.gatherSplitMigrated then
@@ -333,6 +358,9 @@ end
 function GoldMap:SetDebugEnabled(enabled)
   self.db.debug.enabled = enabled and true or false
   self:Printf("Debug %s", self.db.debug.enabled and "enabled" or "disabled")
+  if self.PinTooltip and self.PinTooltip.RefreshIfShown then
+    self.PinTooltip:RefreshIfShown()
+  end
 end
 
 function GoldMap:IsDebugEnabled()

@@ -131,7 +131,10 @@ function GoldMap.Scanner:BuildSeedItemSet(force)
   end
 
   for itemID in pairs(trackedItemSet or {}) do
-    if not GoldMap.AHCache:IsFresh(itemID, staleSeconds) then
+    local record = GoldMap.AHCache and GoldMap.AHCache.GetRecord and GoldMap.AHCache:GetRecord(itemID) or nil
+    local needsSourceRepair = (record ~= nil and record.source ~= "auctionator_api")
+    local needsPriceModelUpgrade = (record ~= nil and record.source == "auctionator_api" and tonumber(record.priceModelVersion) ~= 2)
+    if needsSourceRepair or needsPriceModelUpgrade or not GoldMap.AHCache:IsFresh(itemID, staleSeconds) then
       set[itemID] = true
     end
   end

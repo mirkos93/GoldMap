@@ -14,6 +14,27 @@ local EVENTS = {
   "PLAYER_STOPPED_MOVING",
 }
 
+local MinimapRadiusAPI = C_Minimap and C_Minimap.GetViewRadius
+
+local MINIMAP_SIZE = {
+  indoor = {
+    [0] = 300,
+    [1] = 240,
+    [2] = 180,
+    [3] = 120,
+    [4] = 80,
+    [5] = 50,
+  },
+  outdoor = {
+    [0] = 466 + 2 / 3,
+    [1] = 400,
+    [2] = 333 + 1 / 3,
+    [3] = 266 + 2 / 6,
+    [4] = 200,
+    [5] = 133 + 1 / 3,
+  },
+}
+
 local function GetVectorXY(vec, maybeY)
   if vec == nil then
     return nil, nil
@@ -29,19 +50,19 @@ end
 
 local function ColorForEV(evCopper)
   if not evCopper then
-    return 0.62, 0.62, 0.62 -- gray
+    return 0.62, 0.62, 0.62
   end
   local evGold = evCopper / 10000
   if evGold >= 40 then
-    return 1.00, 0.50, 0.00 -- orange
+    return 1.00, 0.50, 0.00
   elseif evGold >= 20 then
-    return 0.64, 0.21, 0.93 -- purple
+    return 0.64, 0.21, 0.93
   elseif evGold >= 8 then
-    return 0.00, 0.44, 0.87 -- blue
+    return 0.00, 0.44, 0.87
   elseif evGold >= 1 then
-    return 0.12, 1.00, 0.00 -- green
+    return 0.12, 1.00, 0.00
   end
-  return 0.62, 0.62, 0.62 -- gray
+  return 0.62, 0.62, 0.62
 end
 
 local function GetGatherReferencePrice(eval)
@@ -65,19 +86,19 @@ end
 
 local function ColorForGatherPrice(priceCopper)
   if not priceCopper then
-    return 0.62, 0.62, 0.62 -- gray
+    return 0.62, 0.62, 0.62
   end
   local priceGold = priceCopper / 10000
   if priceGold >= 40 then
-    return 1.00, 0.50, 0.00 -- orange
+    return 1.00, 0.50, 0.00
   elseif priceGold >= 20 then
-    return 0.64, 0.21, 0.93 -- purple
+    return 0.64, 0.21, 0.93
   elseif priceGold >= 8 then
-    return 0.00, 0.44, 0.87 -- blue
+    return 0.00, 0.44, 0.87
   elseif priceGold >= 1 then
-    return 0.12, 1.00, 0.00 -- green
+    return 0.12, 1.00, 0.00
   end
-  return 0.62, 0.62, 0.62 -- gray
+  return 0.62, 0.62, 0.62
 end
 
 local function ApplyPinHitRect(button, size)
@@ -111,6 +132,13 @@ local function GetCandidateMinimapSpacingPx(candidate)
   return math.max(6, math.min(40, ui.minimapMobPinSpacing or 12))
 end
 
+local function BuildMinimapGeometry(iconSize)
+  local radiusPixelsX = math.max(35, (Minimap:GetWidth() * 0.5) - iconSize - 2)
+  local radiusPixelsY = math.max(35, (Minimap:GetHeight() * 0.5) - iconSize - 2)
+  local radiusPixels = math.min(radiusPixelsX, radiusPixelsY)
+  return radiusPixelsX, radiusPixelsY, radiusPixels
+end
+
 local function MakePin(parent)
   local button = CreateFrame("Button", nil, parent)
   button:SetSize(14, 14)
@@ -119,7 +147,6 @@ local function MakePin(parent)
   ApplyPinHitRect(button, 14)
 
   button.baseTexturePath = GoldMap:GetIconPath("pinBase", 64) or "Interface\\Buttons\\WHITE8X8"
-  button.selectedTexturePath = GoldMap:GetIconPath("pinSelected", 64) or button.baseTexturePath
 
   local icon = button:CreateTexture(nil, "OVERLAY")
   icon:SetAllPoints()
@@ -137,11 +164,64 @@ local function MakePin(parent)
     GoldMap.PinTooltip:Show(self, self.payload)
   end)
 
-  button:SetScript("OnLeave", function(self)
+  button:SetScript("OnLeave", function()
     GoldMap.PinTooltip:Hide()
   end)
 
   return button
+end
+
+function GoldMap.MinimapPins:GetHBDPins()
+  if self.hbdPins == nil then
+    self.hbdPins = (LibStub and LibStub("HereBeDragons-Pins-2.0", true)) or false
+  end
+  if self.hbdPins == false then
+    return nil
+  end
+  return self.hbdPins
+end
+
+function GoldMap.MinimapPins:AttachPinToMinimap(pin, candidate)
+  local hbdPins = self:GetHBDPins()
+  if not hbdPins or not pin or not candidate then
+    return false
+  end
+
+  local spawn = candidate.spawn
+  if not spawn then
+    return false
+  end
+
+  local dbX = tonumber(spawn.wx)
+  local dbY = tonumber(spawn.wy)
+  if not dbX or not dbY then
+    return false
+  end
+
+  local instanceID = tonumber(candidate.instanceID)
+  if instanceID == nil then
+    instanceID = tonumber(spawn.instanceID) or 0
+  end
+
+  -- GoldMap DB world coords use wx=position_x and wy=position_y.
+  -- HBD world coords use x=position_y and y=position_x, so swap axes.
+  local hbdX = dbY
+  local hbdY = dbX
+
+  hbdPins:AddMinimapIconWorld(self, pin, instanceID, hbdX, hbdY, false)
+  pin.hbdAttached = true
+  return true
+end
+
+function GoldMap.MinimapPins:DetachPinFromMinimap(pin)
+  if not pin or not pin.hbdAttached then
+    return
+  end
+  local hbdPins = self:GetHBDPins()
+  if hbdPins then
+    hbdPins:RemoveMinimapIcon(self, pin)
+  end
+  pin.hbdAttached = nil
 end
 
 function GoldMap.MinimapPins:BuildSpatialIndex()
@@ -216,50 +296,232 @@ function GoldMap.MinimapPins:GetNearbySpawnsWorld(zoneKey, worldX, worldY, world
   return self.tmpCandidates
 end
 
+function GoldMap.MinimapPins:ResolveZoneKeyFromWorld(wx, wy)
+  if not wx or not wy then
+    return nil
+  end
+  local zones = GoldMapData and GoldMapData.Zones
+  if not zones then
+    return nil
+  end
+
+  for zoneKey, zoneData in pairs(zones) do
+    local bounds = zoneData and zoneData.bounds
+    if bounds then
+      local minX = tonumber(bounds.minX)
+      local maxX = tonumber(bounds.maxX)
+      local minY = tonumber(bounds.minY)
+      local maxY = tonumber(bounds.maxY)
+      if minX and maxX and minY and maxY and wx >= minX and wx <= maxX and wy >= minY and wy <= maxY then
+        return zoneKey
+      end
+    end
+  end
+
+  return nil
+end
+
+function GoldMap.MinimapPins:IsGlobalWorldPosition(zoneKey, wx, wy)
+  if not zoneKey or not wx or not wy then
+    return false
+  end
+  local zoneData = GoldMapData and GoldMapData.Zones and GoldMapData.Zones[zoneKey]
+  local bounds = zoneData and zoneData.bounds
+  if not bounds then
+    return false
+  end
+
+  local minX = tonumber(bounds.minX)
+  local maxX = tonumber(bounds.maxX)
+  local minY = tonumber(bounds.minY)
+  local maxY = tonumber(bounds.maxY)
+  if not minX or not maxX or not minY or not maxY then
+    return false
+  end
+
+  local margin = 2000
+  return wx >= (minX - margin) and wx <= (maxX + margin) and wy >= (minY - margin) and wy <= (maxY + margin)
+end
+
 function GoldMap.MinimapPins:GetPlayerLocation()
-  if not C_Map or not C_Map.GetPlayerMapPosition or not C_Map.GetWorldPosFromMapPos then
+  -- Use HBD for world position: it correctly handles UnitPosition's (y,x,z,instance)
+  -- return order so that wx/wy are in the same coordinate system as spawn data.
+  local HBD = LibStub and LibStub("HereBeDragons-2.0", true)
+  if HBD then
+    -- HBD:GetPlayerWorldPosition() returns (posX, posY, instanceID) where:
+    --   posX = UnitPosition 2nd return = east-coordinate
+    --   posY = UnitPosition 1st return = north-coordinate
+    -- Spawn data uses: wx = DB position_x = UnitPosition posY (N/S axis)
+    --                  wy = DB position_y = UnitPosition posX (E/W axis)
+    -- So we must swap: wx = hbd_y, wy = hbd_x
+    local hbd_x, hbd_y, instanceID = HBD:GetPlayerWorldPosition()
+    if not hbd_x or not hbd_y then
+      return nil
+    end
+    local wx = hbd_y  -- DB position_x / UnitPosition posY
+    local wy = hbd_x  -- DB position_y / UnitPosition posX
+
+    local currentMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local zoneKey = currentMapID and GoldMap.Ids:GetZoneKeyForMapID(currentMapID, true) or nil
+    if not zoneKey then
+      zoneKey = self:ResolveZoneKeyFromWorld(wx, wy)
+    end
+    if not zoneKey then
+      return nil
+    end
+
+    local continentMapID = nil
+    if zoneKey == "EK" then
+      continentMapID = 1415
+    elseif zoneKey == "KAL" then
+      continentMapID = 1414
+    end
+
+    local cx, cy
+    if continentMapID and HBD.GetZoneCoordinatesFromWorldInstance then
+      local mx, my = HBD:GetZoneCoordinatesFromWorldInstance(hbd_x, hbd_y, instanceID, continentMapID, true)
+      if mx and my and mx >= 0 and mx <= 1 and my >= 0 and my <= 1 then
+        cx, cy = mx, my
+      end
+    end
+
+    return {
+      zoneKey = zoneKey,
+      currentMapID = currentMapID,
+      instanceID = instanceID,
+      continentMapID = continentMapID,
+      cx = cx,
+      cy = cy,
+      wx = wx,
+      wy = wy,
+    }
+  end
+
+  -- Fallback (no HBD): keep original logic but fix the UnitPosition y/x swap.
+  if not C_Map or not C_Map.GetBestMapForUnit then
     return nil
   end
 
-  local currentMapID = C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-  if not currentMapID then
-    return nil
-  end
+  local currentMapID = C_Map.GetBestMapForUnit("player")
+  local zoneKey = currentMapID and GoldMap.Ids:GetZoneKeyForMapID(currentMapID, true) or nil
 
-  local zoneKey = GoldMap.Ids:GetZoneKeyForMapID(currentMapID, true)
-  if not zoneKey then
-    return nil
-  end
-
-  local mapPos = C_Map.GetPlayerMapPosition(currentMapID, "player")
+  local sourceMapID = currentMapID
+  local mapPos = sourceMapID and C_Map.GetPlayerMapPosition and C_Map.GetPlayerMapPosition(sourceMapID, "player") or nil
   local x, y = GetVectorXY(mapPos)
-  if not x or not y or x < 0 or x > 1 or y < 0 or y > 1 then
-    return nil
+  if x and y and (x < 0 or x > 1 or y < 0 or y > 1) then
+    x, y = nil, nil
   end
 
-  local instanceID, worldPos = C_Map.GetWorldPosFromMapPos(currentMapID, mapPos)
-  local wx, wy = GetVectorXY(worldPos)
+  if not zoneKey then
+    local ekMapPos = C_Map.GetPlayerMapPosition and C_Map.GetPlayerMapPosition(1415, "player") or nil
+    local ekX, ekY = GetVectorXY(ekMapPos)
+    if ekX and ekY then
+      zoneKey = "EK"
+      sourceMapID = 1415
+      mapPos = ekMapPos
+      x, y = ekX, ekY
+    else
+      local kalMapPos = C_Map.GetPlayerMapPosition and C_Map.GetPlayerMapPosition(1414, "player") or nil
+      local kalX, kalY = GetVectorXY(kalMapPos)
+      if kalX and kalY then
+        zoneKey = "KAL"
+        sourceMapID = 1414
+        mapPos = kalMapPos
+        x, y = kalX, kalY
+      end
+    end
+  end
+
+  local wx, wy, instanceID
+  if UnitPosition then
+    -- UnitPosition returns (posY, posX, z, instanceID).
+    -- Spawn data convention: wx = DB position_x = posY, wy = DB position_y = posX.
+    local posY, posX, _, uInstance = UnitPosition("player")
+    if posX and posY then
+      wx = posY  -- DB position_x / N-S axis
+      wy = posX  -- DB position_y / E-W axis
+      instanceID = uInstance
+
+      if zoneKey and not self:IsGlobalWorldPosition(zoneKey, wx, wy) then
+        wx, wy = nil, nil
+      end
+    end
+  end
+
+  if (not wx or not wy) and mapPos and sourceMapID and C_Map.GetWorldPosFromMapPos then
+    local mapInstanceID, worldPos = C_Map.GetWorldPosFromMapPos(sourceMapID, mapPos)
+    local gx, gy = GetVectorXY(worldPos)
+    wx = gx
+    wy = gy
+    instanceID = instanceID or mapInstanceID
+  end
+
   if not wx or not wy then
     return nil
   end
 
+  if not zoneKey then
+    zoneKey = self:ResolveZoneKeyFromWorld(wx, wy)
+  end
+
+  if not zoneKey then
+    return nil
+  end
+
+  if (not x or not y) and sourceMapID and C_Map.GetPlayerMapPosition then
+    local fallbackMapPos = C_Map.GetPlayerMapPosition(sourceMapID, "player")
+    local fx, fy = GetVectorXY(fallbackMapPos)
+    if fx and fy and fx >= 0 and fx <= 1 and fy >= 0 and fy <= 1 then
+      x, y = fx, fy
+    end
+  end
+
+  local continentMapID = nil
+  if zoneKey == "EK" then
+    continentMapID = 1415
+  elseif zoneKey == "KAL" then
+    continentMapID = 1414
+  end
+
+  local cx, cy = nil, nil
+  if continentMapID and C_Map and C_Map.GetPlayerMapPosition then
+    local contPos = C_Map.GetPlayerMapPosition(continentMapID, "player")
+    local mx, my = GetVectorXY(contPos)
+    if mx and my and mx >= 0 and mx <= 1 and my >= 0 and my <= 1 then
+      cx, cy = mx, my
+    end
+  end
+
   return {
     zoneKey = zoneKey,
-    currentMapID = currentMapID,
+    currentMapID = sourceMapID or currentMapID,
     instanceID = instanceID,
-    x = x,
-    y = y,
+    continentMapID = continentMapID,
+    cx = cx,
+    cy = cy,
     wx = wx,
     wy = wy,
   }
 end
 
-function GoldMap.MinimapPins:GetWorldRangeForMap(mapID, normalizedRange)
-  local unitsPerMap = GoldMap.MapProjection:GetApproxWorldUnitsPerMap(mapID)
-  if not unitsPerMap or unitsPerMap <= 0 then
-    return normalizedRange * 12000
+function GoldMap.MinimapPins:GetWorldRangeForMap(_, normalizedRange)
+  local baseRadius
+  if MinimapRadiusAPI then
+    baseRadius = C_Minimap.GetViewRadius()
+  else
+    local zoom = (Minimap and Minimap.GetZoom and Minimap:GetZoom()) or 0
+    local indoors = (GetCVar and (GetCVar("minimapZoom") + 0 == zoom)) and "outdoor" or "indoor"
+    local diameter = MINIMAP_SIZE[indoors] and MINIMAP_SIZE[indoors][zoom] or MINIMAP_SIZE.outdoor[0]
+    baseRadius = (diameter or 466.6667) * 0.5
   end
-  return normalizedRange * unitsPerMap
+
+  if not baseRadius or baseRadius <= 0 then
+    baseRadius = 233.3333
+  end
+
+  local ratio = (normalizedRange and normalizedRange > 0) and (normalizedRange / 0.035) or 1
+  ratio = math.max(0.35, math.min(4.0, ratio))
+  return baseRadius * ratio
 end
 
 function GoldMap.MinimapPins:AcquirePin()
@@ -274,8 +536,10 @@ end
 
 function GoldMap.MinimapPins:ReleaseAllPins()
   for _, pin in ipairs(self.pinPool) do
+    self:DetachPinFromMinimap(pin)
     pin:Hide()
     pin.payload = nil
+    pin.candidate = nil
     pin.tintR, pin.tintG, pin.tintB = nil, nil, nil
     if pin.valueHigh then
       pin.valueHigh:Hide()
@@ -292,8 +556,10 @@ end
 function GoldMap.MinimapPins:FinalizePins()
   for i = self.activeCount + 1, #self.pinPool do
     local pin = self.pinPool[i]
+    self:DetachPinFromMinimap(pin)
     pin:Hide()
     pin.payload = nil
+    pin.candidate = nil
     pin.tintR, pin.tintG, pin.tintB = nil, nil, nil
     if pin.valueHigh then
       pin.valueHigh:Hide()
@@ -302,17 +568,32 @@ function GoldMap.MinimapPins:FinalizePins()
 end
 
 function GoldMap.MinimapPins:RequestRefresh()
-  self.refreshThrottle:Run()
+  self:RequestFullRefresh()
+end
+
+function GoldMap.MinimapPins:RequestFullRefresh()
+  self.fullRefreshRequested = true
+  if self.fullRefreshThrottle then
+    self.fullRefreshThrottle:Run()
+  else
+    self:RefreshNow()
+  end
 end
 
 function GoldMap.MinimapPins:GetRefreshInterval()
   if self.isMoving then
-    return 0.03
+    return 0.05
   end
-  return 0.12
+  return 0.10
+end
+
+function GoldMap.MinimapPins:RepositionActivePins()
+  -- HereBeDragons-Pins handles minimap pin movement/rotation continuously.
 end
 
 function GoldMap.MinimapPins:RefreshNow()
+  self.fullRefreshRequested = false
+
   if not self.initialized then
     return
   end
@@ -321,6 +602,10 @@ function GoldMap.MinimapPins:RefreshNow()
     return
   end
   if not Minimap or not Minimap:IsShown() then
+    self:ReleaseAllPins()
+    return
+  end
+  if not self:GetHBDPins() then
     self:ReleaseAllPins()
     return
   end
@@ -355,79 +640,75 @@ function GoldMap.MinimapPins:RefreshNow()
   local range = math.max(0.005, math.min(0.2, GoldMap.db.ui.minimapRange or 0.035))
   local iconSize = math.max(8, math.min(22, GoldMap.db.ui.minimapIconSize or 14))
   local maxPins = math.max(10, math.min(300, GoldMap.db.ui.minimapMaxPins or 80))
-  local zoomLevel = Minimap.GetZoom and (Minimap:GetZoom() or 0) or 0
-  local zoomAdjustedRange = range / math.max(0.55, 1 + (zoomLevel * 0.22))
-  local rangeSquared = zoomAdjustedRange * zoomAdjustedRange
+  local px = tonumber(playerLoc.wx)
+  local py = tonumber(playerLoc.wy)
+  if not px or not py then
+    self:ReleaseAllPins()
+    return
+  end
 
-  local worldRange = self:GetWorldRangeForMap(playerLoc.currentMapID, zoomAdjustedRange)
-  local worldRangeSquared = worldRange * worldRange
-
-  local radiusPixels = math.max(35, (Minimap:GetWidth() * 0.5) - iconSize - 2)
-  local scale = radiusPixels / zoomAdjustedRange
+  local worldRange = self:GetWorldRangeForMap(playerLoc.currentMapID, range)
+  local candidateRange = math.max(worldRange * 1.20, worldRange + 40)
+  local candidateRangeSquared = candidateRange * candidateRange
+  local _, _, radiusPixels = BuildMinimapGeometry(iconSize)
 
   local evalByNpc = {}
   local evalByNode = {}
   local mobSeed = GoldMapData and GoldMapData.SeedDrops
   local gatherNodes = GoldMapData and GoldMapData.GatherNodes
-  local candidates = self:GetNearbySpawnsWorld(zoneKey, playerLoc.wx, playerLoc.wy, worldRange)
+  local candidates = self:GetNearbySpawnsWorld(zoneKey, px, py, candidateRange)
   wipe(self.tmpVisible)
 
   for _, entry in ipairs(candidates) do
     local spawn = entry.data
-    local wx = tonumber(spawn.wx)
-    local wy = tonumber(spawn.wy)
-    if wx and wy then
-      local dwx = wx - playerLoc.wx
-      local dwy = wy - playerLoc.wy
-      local distWorldSquared = (dwx * dwx) + (dwy * dwy)
-      if distWorldSquared <= worldRangeSquared then
-        local sx, sy = GoldMap.MapProjection:ProjectSpawnToMap(spawn, playerLoc.currentMapID)
-        if sx and sy and sx >= 0 and sx <= 1 and sy >= 0 and sy <= 1 then
-          local dx = sx - playerLoc.x
-          local dy = sy - playerLoc.y
-          local distNormSquared = (dx * dx) + (dy * dy)
-          if distNormSquared <= rangeSquared then
-            if entry.kind == "MOB" and allowMob and evaluator and mobSeed and mobSeed[spawn.npcID] then
-              local eval = evalByNpc[spawn.npcID]
-              if eval == nil then
-                eval = evaluator:EvaluateMobByID(spawn.npcID)
-                evalByNpc[spawn.npcID] = eval or false
-              elseif eval == false then
-                eval = nil
-              end
+    local sx = tonumber(spawn.wx)
+    local sy = tonumber(spawn.wy)
+    if sx and sy then
+      local xDist = px - sx
+      local yDist = py - sy
+      local distSquared = (xDist * xDist) + (yDist * yDist)
+      if distSquared <= candidateRangeSquared then
+        if entry.kind == "MOB" and allowMob and evaluator and mobSeed and mobSeed[spawn.npcID] then
+          local eval = evalByNpc[spawn.npcID]
+          if eval == nil then
+            eval = evaluator:EvaluateMobByID(spawn.npcID)
+            evalByNpc[spawn.npcID] = eval or false
+          elseif eval == false then
+            eval = nil
+          end
 
-              if eval then
-                table.insert(self.tmpVisible, {
-                  kind = "MOB",
-                  spawn = spawn,
-                  mob = eval.mob,
-                  eval = eval,
-                  distSquared = distNormSquared,
-                  dx = dx,
-                  dy = dy,
-                })
-              end
-            elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID] and GoldMap:IsGatherProfessionEnabled(gatherNodes[spawn.nodeID].profession, filters) then
-              local eval = evalByNode[spawn.nodeID]
-              if eval == nil then
-                eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)
-                evalByNode[spawn.nodeID] = eval or false
-              elseif eval == false then
-                eval = nil
-              end
+          if eval then
+            table.insert(self.tmpVisible, {
+              kind = "MOB",
+              spawn = spawn,
+              mob = eval.mob,
+              eval = eval,
+              distSquared = distSquared,
+              worldX = sx,
+              worldY = sy,
+              instanceID = playerLoc.instanceID,
+            })
+          end
+        elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID] and GoldMap:IsGatherProfessionEnabled(gatherNodes[spawn.nodeID].profession, filters) then
+          local eval = evalByNode[spawn.nodeID]
+          if eval == nil then
+            eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)
+            evalByNode[spawn.nodeID] = eval or false
+          elseif eval == false then
+            eval = nil
+          end
 
-              if eval then
-                table.insert(self.tmpVisible, {
-                  kind = "GATHER",
-                  spawn = spawn,
-                  node = gatherNodes[spawn.nodeID],
-                  eval = eval,
-                  distSquared = distNormSquared,
-                  dx = dx,
-                  dy = dy,
-                })
-              end
-            end
+          if eval then
+            table.insert(self.tmpVisible, {
+              kind = "GATHER",
+              spawn = spawn,
+              node = gatherNodes[spawn.nodeID],
+              eval = eval,
+              distSquared = distSquared,
+              worldX = sx,
+              worldY = sy,
+              instanceID = playerLoc.instanceID,
+            })
           end
         end
       end
@@ -435,16 +716,28 @@ function GoldMap.MinimapPins:RefreshNow()
   end
 
   table.sort(self.tmpVisible, function(a, b)
-    if a.distSquared == b.distSquared then
-      return (a.eval.evCopper or 0) > (b.eval.evCopper or 0)
+    local evA = a.eval and (a.eval.evCopper or 0) or 0
+    local evB = b.eval and (b.eval.evCopper or 0) or 0
+    if evA ~= evB then
+      return evA > evB
     end
-    return a.distSquared < b.distSquared
+    if a.kind ~= b.kind then
+      return tostring(a.kind) < tostring(b.kind)
+    end
+    local idA = (a.spawn and (a.spawn.npcID or a.spawn.nodeID)) or 0
+    local idB = (b.spawn and (b.spawn.npcID or b.spawn.nodeID)) or 0
+    if idA ~= idB then
+      return idA < idB
+    end
+    if a.worldX ~= b.worldX then
+      return a.worldX < b.worldX
+    end
+    if a.worldY ~= b.worldY then
+      return a.worldY < b.worldY
+    end
+    return (a.distSquared or 0) < (b.distSquared or 0)
   end)
 
-  local rotateMinimap = GetCVar and GetCVar("rotateMinimap") == "1"
-  local facing = rotateMinimap and (GetPlayerFacing and GetPlayerFacing() or 0) or 0
-  local sinFacing = math.sin(facing)
-  local cosFacing = math.cos(facing)
   local placedCandidates = {}
   local occupiedCells = {}
   local mobVisible = {}
@@ -452,6 +745,7 @@ function GoldMap.MinimapPins:RefreshNow()
   local gatherHerbVisible = {}
   local gatherMiningVisible = {}
   local gatherOtherVisible = {}
+
   for _, candidate in ipairs(self.tmpVisible) do
     if candidate.kind == "GATHER" then
       table.insert(gatherVisible, candidate)
@@ -483,28 +777,17 @@ function GoldMap.MinimapPins:RefreshNow()
       return false
     end
 
-    local eval = candidate.eval
-    local vx = candidate.dx
-    local vy = -candidate.dy
-
-    if rotateMinimap then
-      local rx = (vx * cosFacing) - (vy * sinFacing)
-      local ry = (vx * sinFacing) + (vy * cosFacing)
-      vx, vy = rx, ry
-    end
-
-    local px = vx * scale
-    local py = vy * scale
-    local pixelDist = math.sqrt((px * px) + (py * py))
-    if pixelDist > radiusPixels and pixelDist > 0 then
-      local clampScale = radiusPixels / pixelDist
-      px = px * clampScale
-      py = py * clampScale
-    end
-
     local spacingPx = GetCandidateMinimapSpacingPx(candidate)
-    local cellX = math.floor(px / spacingPx)
-    local cellY = math.floor(py / spacingPx)
+    local spacingWorld = (spacingPx / math.max(1, radiusPixels)) * worldRange
+    spacingWorld = math.max(20, spacingWorld)
+    local cellX, cellY
+    if candidate.worldX and candidate.worldY then
+      cellX = math.floor(candidate.worldX / spacingWorld)
+      cellY = math.floor(candidate.worldY / spacingWorld)
+    else
+      return false
+    end
+
     local profession = candidate.node and candidate.node.profession or ""
     local cellKey = tostring(candidate.kind or "GEN") .. ":" .. tostring(profession) .. ":" .. cellX .. ":" .. cellY
     if occupiedCells[cellKey] then
@@ -515,30 +798,36 @@ function GoldMap.MinimapPins:RefreshNow()
     local pin = self:AcquirePin()
     pin:SetSize(iconSize, iconSize)
     ApplyPinHitRect(pin, iconSize)
-    pin:ClearAllPoints()
     pin.payload = {
       kind = candidate.kind,
       spawn = candidate.spawn,
       mob = candidate.mob,
       node = candidate.node,
-      eval = eval,
+      eval = candidate.eval,
     }
+    pin.candidate = candidate
 
     local r, g, b
     local valueHigh = false
     if candidate.kind == "GATHER" then
-      local gatherPrice = GetGatherReferencePrice(eval)
+      local gatherPrice = GetGatherReferencePrice(candidate.eval)
       r, g, b = ColorForGatherPrice(gatherPrice)
       valueHigh = (gatherPrice or 0) >= (40 * 10000)
     else
-      r, g, b = ColorForEV(eval.evCopper)
-      valueHigh = (eval.evCopper or 0) >= (40 * 10000)
+      r, g, b = ColorForEV(candidate.eval.evCopper)
+      valueHigh = (candidate.eval.evCopper or 0) >= (40 * 10000)
     end
     pin.tintR, pin.tintG, pin.tintB = r, g, b
     pin.icon:SetTexture(GetIconForPayload(pin.payload) or pin.baseTexturePath)
     pin.icon:SetVertexColor(r, g, b, 0.95)
     pin.valueHigh:SetShown(valueHigh)
-    pin:SetPoint("CENTER", Minimap, "CENTER", px, py)
+    if not self:AttachPinToMinimap(pin, candidate) then
+      self.activeCount = self.activeCount - 1
+      pin.payload = nil
+      pin.candidate = nil
+      pin:Hide()
+      return false
+    end
     pin:Show()
     placedCandidates[candidate] = true
     return true
@@ -621,6 +910,7 @@ function GoldMap.MinimapPins:RefreshNow()
   end
 
   self:FinalizePins()
+  self.lastFullRefreshTime = GetTime and GetTime() or 0
 end
 
 function GoldMap.MinimapPins:OnEvent(eventName)
@@ -630,13 +920,12 @@ function GoldMap.MinimapPins:OnEvent(eventName)
 
   if eventName == "PLAYER_STARTED_MOVING" then
     self.isMoving = true
-    self:RequestRefresh()
     return
   end
 
   if eventName == "PLAYER_STOPPED_MOVING" then
     self.isMoving = false
-    self:RequestRefresh()
+    self:RequestFullRefresh()
     return
   end
 
@@ -645,7 +934,7 @@ function GoldMap.MinimapPins:OnEvent(eventName)
     self.isMoving = false
     self:ReleaseAllPins()
     C_Timer.After(1, function()
-      self:RequestRefresh()
+      self:RequestFullRefresh()
     end)
     return
   end
@@ -655,12 +944,12 @@ function GoldMap.MinimapPins:OnEvent(eventName)
     self.isMoving = false
     self:ReleaseAllPins()
     C_Timer.After(0.2, function()
-      self:RequestRefresh()
+      self:RequestFullRefresh()
     end)
     return
   end
 
-  self:RequestRefresh()
+  self:RequestFullRefresh()
 end
 
 function GoldMap.MinimapPins:Init()
@@ -682,12 +971,19 @@ function GoldMap.MinimapPins:Init()
     self.container:SetPropagateMouseMotion(true)
   end
 
+  local hbdPins = self:GetHBDPins()
+  if hbdPins and hbdPins.SetMinimapObject then
+    hbdPins:SetMinimapObject(Minimap)
+  end
+
   self.pinPool = {}
   self.activeCount = 0
   self.tmpCandidates = {}
   self.tmpVisible = {}
 
-  self.refreshThrottle = GoldMap.Throttle:New(0.03, function()
+  self.fullRefreshRequested = false
+  self.lastFullRefreshTime = 0
+  self.fullRefreshThrottle = GoldMap.Throttle:New(0.10, function()
     self:RefreshNow()
   end)
 
@@ -707,21 +1003,26 @@ function GoldMap.MinimapPins:Init()
     local interval = self:GetRefreshInterval()
     if self.updateAccumulator >= interval then
       self.updateAccumulator = 0
-      self:RequestRefresh()
+
+      local now = GetTime and GetTime() or 0
+      local fullInterval = self.isMoving and 0.35 or 0.8
+      if self.fullRefreshRequested or (now - (self.lastFullRefreshTime or 0) >= fullInterval) then
+        self:RequestFullRefresh()
+      end
     end
   end)
 
   self:BuildSpatialIndex()
 
   GoldMap:RegisterMessage("FILTERS_CHANGED", function()
-    self:RequestRefresh()
+    self:RequestFullRefresh()
   end)
   GoldMap:RegisterMessage("PRICE_CACHE_UPDATED", function()
-    self:RequestRefresh()
+    self:RequestFullRefresh()
   end)
   GoldMap:RegisterMessage("GATHER_DATA_UPDATED", function()
     self:BuildSpatialIndex()
-    self:RequestRefresh()
+    self:RequestFullRefresh()
   end)
 
   self.initialized = true

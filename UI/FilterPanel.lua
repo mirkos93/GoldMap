@@ -35,6 +35,10 @@ local PRESET_FILTER_KEYS = {
   "showNoPricePins",
   "minMobLevel",
   "maxMobLevel",
+  "hideRareMobs",
+  "difficultyScope",
+  "minDifficultyTier",
+  "maxDifficultyTier",
   "filterMode",
 }
 
@@ -275,6 +279,63 @@ function GoldMap.FilterPanel:CreateFilterModeDropdown(parent)
   return dropdown
 end
 
+function GoldMap.FilterPanel:CreateDifficultyScopeDropdown(parent)
+  local dropdown = CreateFrame("Frame", "GoldMapDifficultyScopeDropdown", parent, "UIDropDownMenuTemplate")
+
+  local modes = {
+    { value = "ANY", text = "Any target type" },
+    { value = "SOLO_ONLY", text = "Solo-friendly targets only" },
+    { value = "GROUP_ONLY", text = "Group targets only" },
+  }
+
+  UIDropDownMenu_SetWidth(dropdown, 250)
+  UIDropDownMenu_Initialize(dropdown, function(_, _, _)
+    for _, entry in ipairs(modes) do
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = entry.text
+      info.value = entry.value
+      info.func = function(selfButton)
+        UIDropDownMenu_SetSelectedValue(dropdown, selfButton.value)
+        GoldMap.db.filters.difficultyScope = selfButton.value
+        GoldMap:NotifyFiltersChanged()
+      end
+      UIDropDownMenu_AddButton(info)
+    end
+  end)
+
+  return dropdown
+end
+
+function GoldMap.FilterPanel:CreateDifficultyTierDropdown(parent, frameName, onValueSelected)
+  local dropdown = CreateFrame("Frame", frameName, parent, "UIDropDownMenuTemplate")
+
+  local tiers = {
+    { value = 1, text = "Trivial Solo" },
+    { value = 2, text = "Easy Solo" },
+    { value = 3, text = "Fair Fight" },
+    { value = 4, text = "Hard Solo / Old Elite" },
+    { value = 5, text = "Group Target" },
+  }
+
+  UIDropDownMenu_SetWidth(dropdown, 220)
+  UIDropDownMenu_Initialize(dropdown, function(_, _, _)
+    for _, entry in ipairs(tiers) do
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = entry.text
+      info.value = entry.value
+      info.func = function(selfButton)
+        UIDropDownMenu_SetSelectedValue(dropdown, selfButton.value)
+        if onValueSelected then
+          onValueSelected(selfButton.value)
+        end
+      end
+      UIDropDownMenu_AddButton(info)
+    end
+  end)
+
+  return dropdown
+end
+
 function GoldMap.FilterPanel:GetCurrentPresetData()
   local data = {}
   local filters = GoldMap.db and GoldMap.db.filters or {}
@@ -309,6 +370,23 @@ function GoldMap.FilterPanel:ApplyPresetData(data)
     filters.showOreTargets = gatherEnabled
   end
   filters.showGatherTargets = (filters.showHerbTargets ~= false) or (filters.showOreTargets ~= false)
+  if data.difficultyScope == nil then
+    filters.difficultyScope = "ANY"
+  end
+  if data.minDifficultyTier == nil then
+    filters.minDifficultyTier = 1
+  end
+  if data.maxDifficultyTier == nil then
+    filters.maxDifficultyTier = 5
+  end
+  if data.hideRareMobs == nil then
+    filters.hideRareMobs = false
+  end
+  filters.minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
+  filters.maxDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
+  if filters.maxDifficultyTier < filters.minDifficultyTier then
+    filters.maxDifficultyTier = filters.minDifficultyTier
+  end
   filters.onlyKillableForPlayer = true
 
   self.hasPendingInputChanges = false
@@ -525,6 +603,11 @@ end
 function GoldMap.FilterPanel:SyncInputsFromDB()
   local filters = GoldMap.db.filters
   filters.onlyKillableForPlayer = true
+  if filters.difficultyScope ~= "ANY" and filters.difficultyScope ~= "SOLO_ONLY" and filters.difficultyScope ~= "GROUP_ONLY" then
+    filters.difficultyScope = "ANY"
+  end
+  filters.minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
+  filters.maxDifficultyTier = math.max(filters.minDifficultyTier, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
   local gatherEnabled = filters.showGatherTargets ~= false
   local showHerbTargets = filters.showHerbTargets
   local showOreTargets = filters.showOreTargets
@@ -560,6 +643,9 @@ function GoldMap.FilterPanel:SyncInputsFromDB()
   if self.inputs.showNoPrice then
     self.inputs.showNoPrice:SetChecked(filters.showNoPricePins)
   end
+  if self.inputs.hideRareMobs then
+    self.inputs.hideRareMobs:SetChecked(filters.hideRareMobs == true)
+  end
 
   UIDropDownMenu_SetSelectedValue(self.inputs.minQuality, filters.minQuality)
   UIDropDownMenu_SetSelectedValue(self.inputs.gatherMinQuality, filters.gatherMinQuality or 1)
@@ -581,80 +667,115 @@ function GoldMap.FilterPanel:SyncInputsFromDB()
   if self.inputs.gatherReliability then
     UIDropDownMenu_SetSelectedValue(self.inputs.gatherReliability, filters.gatherMinReliabilityTier or 0)
   end
+  if self.inputs.difficultyScope then
+    UIDropDownMenu_SetSelectedValue(self.inputs.difficultyScope, filters.difficultyScope or "ANY")
+  end
+  if self.inputs.minDifficultyTier then
+    UIDropDownMenu_SetSelectedValue(self.inputs.minDifficultyTier, filters.minDifficultyTier or 1)
+  end
+  if self.inputs.maxDifficultyTier then
+    UIDropDownMenu_SetSelectedValue(self.inputs.maxDifficultyTier, filters.maxDifficultyTier or 5)
+  end
   UIDropDownMenu_SetSelectedValue(self.inputs.filterMode, filters.filterMode or "ALL")
 end
 
 function GoldMap.FilterPanel:ApplyPreset(presetKey)
   local f = GoldMap.db.filters
+  local playerLevel = UnitLevel and UnitLevel("player") or 60
+  if type(playerLevel) ~= "number" or playerLevel <= 0 then
+    playerLevel = 60
+  end
+
+  local function SetMobLevelWindow(minOffset, maxOffset)
+    f.minMobLevel = math.max(1, math.floor(playerLevel + minOffset))
+    f.maxMobLevel = math.min(63, math.floor(playerLevel + maxOffset))
+    if f.maxMobLevel < f.minMobLevel then
+      f.maxMobLevel = f.minMobLevel
+    end
+  end
+
   f.onlyKillableForPlayer = true
+  f.hideRareMobs = false
   f.showMobTargets = true
   f.showGatherTargets = true
   f.showHerbTargets = true
   f.showOreTargets = true
+  f.difficultyScope = "ANY"
+  f.minDifficultyTier = 1
+  f.maxDifficultyTier = 5
 
   if presetKey == "FAST" then
-    f.minDropRate = 1
-    f.maxDropRate = 100
-    f.minEVGold = 8
-    f.maxEVGold = 999999
-    f.gatherMinDropRate = 1
-    f.gatherMaxDropRate = 100
-    f.gatherMinEVGold = 8
-    f.gatherMaxEVGold = 999999
-    f.gatherMinItemPriceGold = 0.5
-    f.minReliabilityTier = 2
-    f.gatherMinReliabilityTier = 2
-    f.minSellSpeedTier = 2
-    f.gatherMinSellSpeedTier = 2
-    f.gatherMinQuality = 1
-    f.minItemPriceGold = 0.5
-    f.minQuality = 1
-    f.filterMode = "ALL"
-    f.showNoPricePins = false
-    f.minMobLevel = 1
-    f.maxMobLevel = 63
-  elseif presetKey == "STEADY" then
     f.minDropRate = 5
     f.maxDropRate = 100
     f.minEVGold = 3
     f.maxEVGold = 999999
     f.gatherMinDropRate = 5
     f.gatherMaxDropRate = 100
-    f.gatherMinEVGold = 3
+    f.gatherMinEVGold = 2
     f.gatherMaxEVGold = 999999
-    f.gatherMinItemPriceGold = 0.2
+    f.gatherMinItemPriceGold = 0.1
+    f.minReliabilityTier = 1
+    f.gatherMinReliabilityTier = 1
+    f.minSellSpeedTier = 2
+    f.gatherMinSellSpeedTier = 2
+    f.gatherMinQuality = 1
+    f.minItemPriceGold = 0.15
+    f.minQuality = 1
+    f.filterMode = "ALL"
+    f.showNoPricePins = false
+    f.hideRareMobs = true
+    f.difficultyScope = "SOLO_ONLY"
+    f.minDifficultyTier = 1
+    f.maxDifficultyTier = 4
+    SetMobLevelWindow(-10, 2)
+  elseif presetKey == "STEADY" then
+    f.minDropRate = 2
+    f.maxDropRate = 100
+    f.minEVGold = 6
+    f.maxEVGold = 999999
+    f.gatherMinDropRate = 2
+    f.gatherMaxDropRate = 100
+    f.gatherMinEVGold = 5
+    f.gatherMaxEVGold = 999999
+    f.gatherMinItemPriceGold = 0.25
     f.minReliabilityTier = 1
     f.gatherMinReliabilityTier = 1
     f.minSellSpeedTier = 1
     f.gatherMinSellSpeedTier = 1
     f.gatherMinQuality = 1
-    f.minItemPriceGold = 0.2
+    f.minItemPriceGold = 0.3
     f.minQuality = 1
     f.filterMode = "ALL"
     f.showNoPricePins = false
-    f.minMobLevel = 1
-    f.maxMobLevel = 63
+    f.hideRareMobs = false
+    f.difficultyScope = "ANY"
+    f.minDifficultyTier = 2
+    f.maxDifficultyTier = 4
+    SetMobLevelWindow(-6, 4)
   elseif presetKey == "HIGH" then
-    f.minDropRate = 0.5
+    f.minDropRate = 0.2
     f.maxDropRate = 100
     f.minEVGold = 20
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 0.5
+    f.gatherMinDropRate = 0.2
     f.gatherMaxDropRate = 100
-    f.gatherMinEVGold = 20
+    f.gatherMinEVGold = 18
     f.gatherMaxEVGold = 999999
-    f.gatherMinItemPriceGold = 5
+    f.gatherMinItemPriceGold = 2
     f.minReliabilityTier = 1
     f.gatherMinReliabilityTier = 1
     f.minSellSpeedTier = 0
     f.gatherMinSellSpeedTier = 0
     f.gatherMinQuality = 2
-    f.minItemPriceGold = 5
+    f.minItemPriceGold = 3
     f.minQuality = 2
     f.filterMode = "ALL"
     f.showNoPricePins = false
-    f.minMobLevel = 1
-    f.maxMobLevel = 63
+    f.hideRareMobs = false
+    f.difficultyScope = "ANY"
+    f.minDifficultyTier = 3
+    f.maxDifficultyTier = 5
+    SetMobLevelWindow(-2, 8)
   elseif presetKey == "NOPRICE" then
     f.minDropRate = 0
     f.maxDropRate = 100
@@ -674,8 +795,59 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.minQuality = 1
     f.filterMode = "ALL"
     f.showNoPricePins = true
-    f.minMobLevel = 1
-    f.maxMobLevel = 63
+    f.hideRareMobs = false
+    f.difficultyScope = "ANY"
+    f.minDifficultyTier = 1
+    f.maxDifficultyTier = 5
+    SetMobLevelWindow(-20, 10)
+  elseif presetKey == "SOLOSAFE" then
+    f.minDropRate = 8
+    f.maxDropRate = 100
+    f.minEVGold = 1.5
+    f.maxEVGold = 999999
+    f.gatherMinDropRate = 8
+    f.gatherMaxDropRate = 100
+    f.gatherMinEVGold = 1.5
+    f.gatherMaxEVGold = 999999
+    f.gatherMinItemPriceGold = 0.1
+    f.minReliabilityTier = 1
+    f.gatherMinReliabilityTier = 1
+    f.minSellSpeedTier = 1
+    f.gatherMinSellSpeedTier = 1
+    f.gatherMinQuality = 1
+    f.minItemPriceGold = 0.1
+    f.minQuality = 1
+    f.filterMode = "ALL"
+    f.showNoPricePins = false
+    f.hideRareMobs = true
+    f.difficultyScope = "SOLO_ONLY"
+    f.minDifficultyTier = 1
+    f.maxDifficultyTier = 3
+    SetMobLevelWindow(-12, 0)
+  elseif presetKey == "GROUP" then
+    f.minDropRate = 0.1
+    f.maxDropRate = 100
+    f.minEVGold = 12
+    f.maxEVGold = 999999
+    f.gatherMinDropRate = 0.1
+    f.gatherMaxDropRate = 100
+    f.gatherMinEVGold = 10
+    f.gatherMaxEVGold = 999999
+    f.gatherMinItemPriceGold = 1
+    f.minReliabilityTier = 1
+    f.gatherMinReliabilityTier = 1
+    f.minSellSpeedTier = 0
+    f.gatherMinSellSpeedTier = 0
+    f.gatherMinQuality = 2
+    f.minItemPriceGold = 2
+    f.minQuality = 2
+    f.filterMode = "ALL"
+    f.showNoPricePins = false
+    f.hideRareMobs = false
+    f.difficultyScope = "GROUP_ONLY"
+    f.minDifficultyTier = 4
+    f.maxDifficultyTier = 5
+    SetMobLevelWindow(-2, 10)
   end
 
   self:SyncInputsFromDB()
@@ -811,6 +983,53 @@ function GoldMap.FilterPanel:BuildMobsPage(page)
   AddSectionTitle(page.content, page.state, "Mob Target Filters")
   AddInputRow(self, page.content, page.state, "Minimum mob level", "minMobLevel")
   AddInputRow(self, page.content, page.state, "Maximum mob level", "maxMobLevel")
+
+  local hideRare = MakeCheckbox(page.content, "Hide rare mobs (Rare / Rare Elite)")
+  hideRare:SetPoint("TOPLEFT", 10, page.state.y + 6)
+  hideRare:SetScript("OnClick", function(selfButton)
+    GoldMap.db.filters.hideRareMobs = selfButton:GetChecked() and true or false
+    GoldMap:NotifyFiltersChanged()
+  end)
+  self.inputs.hideRareMobs = hideRare
+  page.state.y = page.state.y - 30
+
+  local scopeLabel = MakeLabel(page.content, "Fight type")
+  scopeLabel:SetPoint("TOPLEFT", 12, page.state.y)
+  local scopeDropdown = self:CreateDifficultyScopeDropdown(page.content)
+  scopeDropdown:SetPoint("TOPRIGHT", -10, page.state.y + 8)
+  self.inputs.difficultyScope = scopeDropdown
+  page.state.y = page.state.y - 42
+
+  local minDifficultyLabel = MakeLabel(page.content, "Minimum fight difficulty")
+  minDifficultyLabel:SetPoint("TOPLEFT", 12, page.state.y)
+  local minDifficultyDropdown = self:CreateDifficultyTierDropdown(page.content, "GoldMapMinDifficultyTierDropdown", function(value)
+    local filters = GoldMap.db.filters
+    filters.minDifficultyTier = value
+    if (filters.maxDifficultyTier or 5) < value then
+      filters.maxDifficultyTier = value
+    end
+    self:SyncInputsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+  minDifficultyDropdown:SetPoint("TOPRIGHT", -10, page.state.y + 8)
+  self.inputs.minDifficultyTier = minDifficultyDropdown
+  page.state.y = page.state.y - 42
+
+  local maxDifficultyLabel = MakeLabel(page.content, "Maximum fight difficulty")
+  maxDifficultyLabel:SetPoint("TOPLEFT", 12, page.state.y)
+  local maxDifficultyDropdown = self:CreateDifficultyTierDropdown(page.content, "GoldMapMaxDifficultyTierDropdown", function(value)
+    local filters = GoldMap.db.filters
+    filters.maxDifficultyTier = value
+    if (filters.minDifficultyTier or 1) > value then
+      filters.minDifficultyTier = value
+    end
+    self:SyncInputsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+  maxDifficultyDropdown:SetPoint("TOPRIGHT", -10, page.state.y + 8)
+  self.inputs.maxDifficultyTier = maxDifficultyDropdown
+  page.state.y = page.state.y - 42
+
   AddInputRow(self, page.content, page.state, "Min estimated gold per kill", "minEV")
   AddInputRow(self, page.content, page.state, "Max estimated gold per kill", "maxEV")
 
@@ -846,6 +1065,7 @@ function GoldMap.FilterPanel:BuildMobsPage(page)
   self.inputs.minQuality = qualityDropdown
   page.state.y = page.state.y - 42
 
+  AddHint(page.content, page.state, "Fight difficulty combines mob rank (Normal/Elite/Boss) and level gap vs your character. Old low-level elites can appear as hard-solo, while on-level elites stay group targets.")
   AddHint(page.content, page.state, "Estimated gold is expected value from drop chance and current Auction House snapshot prices. Reliability filters weak data; selling speed helps avoid expensive-but-stagnant drops.")
   page.content:SetHeight(math.max(360, math.abs(page.state.y) + 24))
 end
@@ -915,8 +1135,11 @@ function GoldMap.FilterPanel:BuildPresetsPage(page)
   AddSectionTitle(page.content, page.state, "Quick Presets")
   AddHint(page.content, page.state, "Presets update all Mob + Gathering filters together. You can then fine-tune in each dedicated tab.")
 
+  local presetBtnWidth = 132
+  local presetBtnGap = 8
+
   local btnFast = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
-  btnFast:SetSize(120, 24)
+  btnFast:SetSize(presetBtnWidth, 24)
   btnFast:SetPoint("TOPLEFT", 12, page.state.y)
   btnFast:SetText("Fast")
   btnFast:SetScript("OnClick", function()
@@ -924,26 +1147,42 @@ function GoldMap.FilterPanel:BuildPresetsPage(page)
   end)
 
   local btnSteady = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
-  btnSteady:SetSize(120, 24)
-  btnSteady:SetPoint("LEFT", btnFast, "RIGHT", 10, 0)
+  btnSteady:SetSize(presetBtnWidth, 24)
+  btnSteady:SetPoint("LEFT", btnFast, "RIGHT", presetBtnGap, 0)
   btnSteady:SetText("Steady")
   btnSteady:SetScript("OnClick", function()
     self:ApplyPreset("STEADY")
   end)
 
-  page.state.y = page.state.y - 34
-
   local btnHigh = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
-  btnHigh:SetSize(120, 24)
-  btnHigh:SetPoint("TOPLEFT", 12, page.state.y)
+  btnHigh:SetSize(presetBtnWidth, 24)
+  btnHigh:SetPoint("LEFT", btnSteady, "RIGHT", presetBtnGap, 0)
   btnHigh:SetText("High Value")
   btnHigh:SetScript("OnClick", function()
     self:ApplyPreset("HIGH")
   end)
 
+  page.state.y = page.state.y - 34
+
+  local btnSoloSafe = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
+  btnSoloSafe:SetSize(presetBtnWidth, 24)
+  btnSoloSafe:SetPoint("TOPLEFT", 12, page.state.y)
+  btnSoloSafe:SetText("Solo Safe")
+  btnSoloSafe:SetScript("OnClick", function()
+    self:ApplyPreset("SOLOSAFE")
+  end)
+
+  local btnGroup = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
+  btnGroup:SetSize(presetBtnWidth, 24)
+  btnGroup:SetPoint("LEFT", btnSoloSafe, "RIGHT", presetBtnGap, 0)
+  btnGroup:SetText("Group Farm")
+  btnGroup:SetScript("OnClick", function()
+    self:ApplyPreset("GROUP")
+  end)
+
   local btnNoPrice = CreateFrame("Button", nil, page.content, "UIPanelButtonTemplate")
-  btnNoPrice:SetSize(120, 24)
-  btnNoPrice:SetPoint("LEFT", btnHigh, "RIGHT", 10, 0)
+  btnNoPrice:SetSize(presetBtnWidth, 24)
+  btnNoPrice:SetPoint("LEFT", btnGroup, "RIGHT", presetBtnGap, 0)
   btnNoPrice:SetText("No Price")
   btnNoPrice:SetScript("OnClick", function()
     self:ApplyPreset("NOPRICE")
@@ -1038,7 +1277,7 @@ function GoldMap.FilterPanel:BuildPresetsPage(page)
   }
 
   AddSectionTitle(page.content, page.state, "What each preset means")
-  AddHint(page.content, page.state, "Fast: favors quick-selling targets with better baseline value.\nSteady: balanced setup for regular farming sessions.\nHigh Value: focuses on expensive outcomes, even if slower to sell.\nNo Price: includes not-yet-priced targets to discover new opportunities.")
+  AddHint(page.content, page.state, "Fast: quick-selling solo targets near your level.\nSteady: balanced profile for regular solo play.\nHigh Value: bigger jackpots, allows harder targets.\nSolo Safe: low-risk solo farming with easier fights.\nGroup Farm: elite/group-oriented targets with higher challenge.\nNo Price: discovery mode including unpriced targets.")
 
   page.content:SetHeight(math.max(560, math.abs(page.state.y) + 24))
   self:RefreshCustomPresetDropdown()

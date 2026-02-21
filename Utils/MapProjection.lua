@@ -123,7 +123,6 @@ function GoldMap.MapProjection:ProjectSpawnToMap(spawn, mapID)
     if px and py then
       return px, py
     end
-    return nil
   end
 
   if spawn.x and spawn.y then

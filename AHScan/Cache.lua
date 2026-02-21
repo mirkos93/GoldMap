@@ -2,6 +2,8 @@ local _, GoldMap = ...
 GoldMap = GoldMap or {}
 
 GoldMap.AHCache = GoldMap.AHCache or {}
+local PRICE_MODEL_VERSION = 2
+local SafeAuctionatorCall
 
 local function EnsureRecordMetadata(record, now)
   if not record then
@@ -22,6 +24,13 @@ local function Clamp(value, low, high)
     return high
   end
   return value
+end
+
+local function BuildBasicItemLink(itemID)
+  if type(itemID) ~= "number" then
+    return nil
+  end
+  return string.format("item:%d:0:0:0:0:0:0:0", itemID)
 end
 
 GoldMap.AHCache.SellSpeedTiers = {
@@ -79,6 +88,84 @@ function GoldMap.AHCache:Init()
   }
   self.data = GoldMapPriceCache
   self.signalCache = self.signalCache or {}
+  self.legacyRepairTried = self.legacyRepairTried or {}
+end
+
+function GoldMap.AHCache:ResolveAuctionatorPriceCandidates(itemID)
+  if type(itemID) ~= "number" or not self:IsAuctionatorAvailable() then
+    return nil, nil, nil
+  end
+
+  local api = Auctionator.API.v1
+  local callerID = "GoldMap"
+
+  local priceByItemID, okID = SafeAuctionatorCall(api.GetAuctionPriceByItemID, callerID, itemID)
+  if not okID then
+    priceByItemID = nil
+  end
+
+  local priceByLink = nil
+  if type(api.GetAuctionPriceByItemLink) == "function" then
+    local basicLink = BuildBasicItemLink(itemID)
+    if basicLink then
+      local value, okLink = SafeAuctionatorCall(api.GetAuctionPriceByItemLink, callerID, basicLink)
+      if okLink and type(value) == "number" and value > 0 then
+        priceByLink = value
+      end
+    end
+  end
+
+  if type(priceByItemID) ~= "number" or priceByItemID <= 0 then
+    priceByItemID = nil
+  end
+
+  local effectivePrice = priceByLink or priceByItemID
+  return effectivePrice, priceByItemID, priceByLink
+end
+
+function GoldMap.AHCache:TryRepairLegacyRecord(itemID, record)
+  if type(itemID) ~= "number" or type(record) ~= "table" then
+    return record
+  end
+  if record.priceModelVersion == PRICE_MODEL_VERSION then
+    return record
+  end
+  if record.source ~= "auctionator_api" then
+    return record
+  end
+  if self.legacyRepairTried[itemID] then
+    return record
+  end
+
+  self.legacyRepairTried[itemID] = true
+
+  local effectivePrice, priceByItemID, priceByLink = self:ResolveAuctionatorPriceCandidates(itemID)
+  if not effectivePrice or effectivePrice <= 0 then
+    record.priceModelVersion = PRICE_MODEL_VERSION
+    return record
+  end
+
+  local oldPrice = tonumber(record.price) or 0
+  record.price = effectivePrice
+  record.priceByItemID = priceByItemID
+  record.priceByLink = priceByLink
+  record.priceSourceType = priceByLink and "link" or "itemid"
+  record.priceModelVersion = PRICE_MODEL_VERSION
+  if priceByLink and priceByItemID and priceByLink > 0 and priceByItemID > 0 then
+    local high = math.max(priceByLink, priceByItemID)
+    local low = math.max(1, math.min(priceByLink, priceByItemID))
+    record.priceSpreadRatio = high / low
+  else
+    record.priceSpreadRatio = nil
+  end
+
+  if oldPrice ~= effectivePrice then
+    self.data.revision = (self.data.revision or 0) + 1
+    self:InvalidateSignalCache(itemID)
+    GoldMap:SendMessage("PRICE_CACHE_UPDATED", itemID, effectivePrice)
+  end
+
+  return record
 end
 
 function GoldMap.AHCache:Get(itemID)
@@ -95,7 +182,8 @@ function GoldMap.AHCache:GetRecord(itemID)
   if not record then
     return nil
   end
-  return EnsureRecordMetadata(record, GetServerTime())
+  EnsureRecordMetadata(record, GetServerTime())
+  return record
 end
 
 function GoldMap.AHCache:IsFresh(itemID, staleSeconds)
@@ -185,7 +273,7 @@ function GoldMap.AHCache:InvalidateSignalCache(itemID)
   end
 end
 
-local function SafeAuctionatorCall(fn, ...)
+SafeAuctionatorCall = function(fn, ...)
   if type(fn) ~= "function" then
     return nil, false
   end
@@ -225,10 +313,30 @@ function GoldMap.AHCache:ImportFromAuctionator(itemSet, maxAgeDays)
   for itemID in pairs(itemSet) do
     if type(itemID) == "number" then
       stats.requested = stats.requested + 1
-      local price, okPrice = SafeAuctionatorCall(api.GetAuctionPriceByItemID, callerID, itemID)
+      local priceByItemID, okPrice = SafeAuctionatorCall(api.GetAuctionPriceByItemID, callerID, itemID)
       if not okPrice then
         stats.errors = stats.errors + 1
-      elseif type(price) == "number" and price > 0 then
+      end
+
+      local priceByLink = nil
+      if type(api.GetAuctionPriceByItemLink) == "function" then
+        local basicLink = BuildBasicItemLink(itemID)
+        if basicLink then
+          local linkValue, okLink = SafeAuctionatorCall(api.GetAuctionPriceByItemLink, callerID, basicLink)
+          if not okLink then
+            stats.errors = stats.errors + 1
+          elseif type(linkValue) == "number" and linkValue > 0 then
+            priceByLink = linkValue
+          end
+        end
+      end
+
+      if type(priceByItemID) ~= "number" or priceByItemID <= 0 then
+        priceByItemID = nil
+      end
+
+      local price = priceByLink or priceByItemID
+      if type(price) == "number" and price > 0 then
         stats.priced = stats.priced + 1
         local ageDays = nil
         local exact = nil
@@ -265,6 +373,10 @@ function GoldMap.AHCache:ImportFromAuctionator(itemSet, maxAgeDays)
           self.data.items[itemID] = {
             price = price,
             source = "auctionator_api",
+            priceSourceType = priceByLink and "link" or "itemid",
+            priceByItemID = priceByItemID,
+            priceByLink = priceByLink,
+            priceModelVersion = PRICE_MODEL_VERSION,
             seenAt = now,
             firstSeenAt = tonumber(firstSeenAt) or now,
             samples = math.max(1, samples),
@@ -407,7 +519,46 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
 end
 
 function GoldMap.AHCache:GetSellSpeed(itemID)
+  local now = GetServerTime()
   local record = self:GetRecord(itemID)
+
+  if (not record or not record.price or record.price <= 0) and self:IsAuctionatorAvailable() then
+    local api = Auctionator.API.v1
+    local callerID = "GoldMap"
+    local livePrice, okPrice = SafeAuctionatorCall(api.GetAuctionPriceByItemID, callerID, itemID)
+    if okPrice and type(livePrice) == "number" and livePrice > 0 then
+      local liveAgeDays = nil
+      if type(api.GetAuctionAgeByItemID) == "function" then
+        local ageValue, okAge = SafeAuctionatorCall(api.GetAuctionAgeByItemID, callerID, itemID)
+        if okAge and type(ageValue) == "number" then
+          liveAgeDays = ageValue
+        end
+      end
+
+      local liveExact = nil
+      if type(api.IsAuctionDataExactByItemID) == "function" then
+        local exactValue, okExact = SafeAuctionatorCall(api.IsAuctionDataExactByItemID, callerID, itemID)
+        if okExact and type(exactValue) == "boolean" then
+          liveExact = exactValue
+        end
+      end
+
+      record = {
+        price = livePrice,
+        source = "auctionator_live_tooltip",
+        priceSourceType = "itemid",
+        priceByItemID = livePrice,
+        priceByLink = nil,
+        priceModelVersion = PRICE_MODEL_VERSION,
+        seenAt = now,
+        firstSeenAt = now,
+        samples = 1,
+        sourceAgeDays = liveAgeDays,
+        sourceExact = liveExact,
+      }
+    end
+  end
+
   if not record or not record.price or record.price <= 0 then
     local tier = 0
     return tier, self:GetSellSpeedLabel(tier), 0, {
@@ -422,46 +573,78 @@ function GoldMap.AHCache:GetSellSpeed(itemID)
   local signals = self:GetAuctionatorSignals(itemID) or {}
   local score = 0
 
+  local seenAt = tonumber(record.seenAt) or now
+  local localAgeHours = math.max(0, (now - seenAt) / 3600)
   local ageDays = tonumber(signals.ageDays)
-  if ageDays ~= nil then
-    if ageDays <= 1 then
-      score = score + 30
-    elseif ageDays <= 3 then
-      score = score + 24
-    elseif ageDays <= 7 then
-      score = score + 14
-    elseif ageDays <= 14 then
-      score = score + 6
-    end
+  local ageHours = localAgeHours
+  if ageDays ~= nil and ageDays >= 0 then
+    ageHours = math.max(ageHours, ageDays * 24)
+  elseif type(record.sourceAgeDays) == "number" and record.sourceAgeDays >= 0 then
+    ageHours = math.max(ageHours, record.sourceAgeDays * 24)
+  end
+
+  -- Freshness drives sell speed: closer to 12h/24h mental model.
+  if ageHours <= 12 then
+    score = score + 45
+  elseif ageHours <= 24 then
+    score = score + 28
+  elseif ageHours <= 48 then
+    score = score + 10
+  elseif ageHours <= 72 then
+    score = score + 2
+  else
+    score = score - 8
   end
 
   local activityDays7 = tonumber(signals.activityDays7) or 0
-  score = score + Clamp(activityDays7 * 6, 0, 36)
+  score = score + Clamp(activityDays7 * 4, 0, 20)
+
+  local historyDays = tonumber(signals.historyDays)
+  if historyDays and historyDays > 0 then
+    score = score + Clamp(math.floor(historyDays * 0.6), 0, 12)
+  end
 
   local avgAvailable = tonumber(signals.availableAvg)
   if avgAvailable and avgAvailable > 0 then
-    score = score + Clamp(math.floor(math.log(avgAvailable + 1) * 4), 0, 18)
+    if avgAvailable >= 300 then
+      score = score - 14
+    elseif avgAvailable >= 150 then
+      score = score - 10
+    elseif avgAvailable >= 80 then
+      score = score - 6
+    else
+      score = score + Clamp(math.floor(math.log(avgAvailable + 1) * 3), 0, 10)
+    end
   end
 
   if signals.exact == true then
-    score = score + 10
+    score = score + 8
+  elseif signals.exact == false then
+    score = score + 2
   end
 
   local volatilityPct = tonumber(signals.volatilityPct)
-  if volatilityPct and volatilityPct > 180 then
+  if volatilityPct and volatilityPct > 250 then
+    score = score - 18
+  elseif volatilityPct and volatilityPct > 150 then
     score = score - 12
-  elseif volatilityPct and volatilityPct > 100 then
+  elseif volatilityPct and volatilityPct > 90 then
+    score = score - 6
+  end
+
+  -- If Auctionator age is missing, fallback data should be conservative.
+  if ageDays == nil and localAgeHours > 24 then
     score = score - 6
   end
 
   score = Clamp(math.floor(score + 0.5), 0, 100)
 
   local tier
-  if score >= 70 then
+  if score >= 78 then
     tier = 3
-  elseif score >= 45 then
+  elseif score >= 52 then
     tier = 2
-  elseif score >= 20 then
+  elseif score >= 25 then
     tier = 1
   else
     tier = 0
@@ -469,6 +652,9 @@ function GoldMap.AHCache:GetSellSpeed(itemID)
 
   return tier, self:GetSellSpeedLabel(tier), score, {
     ageDays = ageDays,
+    ageHours = ageHours,
+    localAgeHours = localAgeHours,
+    historyDays = historyDays,
     activityDays7 = activityDays7,
     availableAvg = avgAvailable,
     exact = signals.exact,
@@ -770,11 +956,11 @@ function GoldMap.AHCache:GetAggregateSellSpeed(items, maxRows)
 
   local score = math.floor((weightedScore / totalWeight) + 0.5)
   local tier
-  if score >= 70 then
+  if score >= 78 then
     tier = 3
-  elseif score >= 45 then
+  elseif score >= 52 then
     tier = 2
-  elseif score >= 20 then
+  elseif score >= 25 then
     tier = 1
   else
     tier = 0
@@ -784,4 +970,72 @@ function GoldMap.AHCache:GetAggregateSellSpeed(items, maxRows)
     sampleItems = considered,
     totalWeight = totalWeight,
   }
+end
+
+function GoldMap.AHCache:GetTrackedMarketHealth(itemSet)
+  local totals = {
+    tracked = 0,
+    priced = 0,
+    missing = 0,
+    fresh12h = 0,
+    fresh24h = 0,
+    stale24h = 0,
+    stale48h = 0,
+    averageAgeHours = nil,
+    stale24hRatio = 0,
+    stale48hRatio = 0,
+    missingRatio = 0,
+  }
+
+  if type(itemSet) ~= "table" then
+    return totals
+  end
+
+  local now = GetServerTime()
+  local ageSum = 0
+  local ageCount = 0
+
+  for itemID in pairs(itemSet) do
+    if type(itemID) == "number" then
+      totals.tracked = totals.tracked + 1
+      local record = self:GetRecord(itemID)
+      if not record or not record.price or record.price <= 0 then
+        totals.missing = totals.missing + 1
+      else
+        totals.priced = totals.priced + 1
+        local seenAt = tonumber(record.seenAt) or now
+        local ageHours = math.max(0, (now - seenAt) / 3600)
+        if type(record.sourceAgeDays) == "number" and record.sourceAgeDays >= 0 then
+          ageHours = math.max(ageHours, record.sourceAgeDays * 24)
+        end
+
+        ageSum = ageSum + ageHours
+        ageCount = ageCount + 1
+
+        if ageHours <= 12 then
+          totals.fresh12h = totals.fresh12h + 1
+        end
+        if ageHours <= 24 then
+          totals.fresh24h = totals.fresh24h + 1
+        else
+          totals.stale24h = totals.stale24h + 1
+        end
+        if ageHours > 48 then
+          totals.stale48h = totals.stale48h + 1
+        end
+      end
+    end
+  end
+
+  if ageCount > 0 then
+    totals.averageAgeHours = ageSum / ageCount
+  end
+
+  if totals.tracked > 0 then
+    totals.missingRatio = totals.missing / totals.tracked
+    totals.stale24hRatio = totals.stale24h / totals.tracked
+    totals.stale48hRatio = totals.stale48h / totals.tracked
+  end
+
+  return totals
 end

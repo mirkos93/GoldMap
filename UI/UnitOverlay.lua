@@ -36,15 +36,17 @@ local function BuildTargetInfo(eval)
   end
 
   local evText = FormatGoldShort(eval.evCopper)
-  local dropsText = string.format("items %d/%d", eval.filteredDropCount or 0, eval.totalDropCount or 0)
+  local deltaText = eval.levelDelta and string.format("%+d lvl", eval.levelDelta) or "? lvl"
+  local roleText = eval.groupRecommended and "Group" or "Solo"
+  local rankText = eval.rankLabel or "Normal"
   local best = eval.bestDrop
 
   if not best then
-    return string.format("GoldMap %s\n%s", evText, dropsText)
+    return string.format("GoldMap %s\n%s | %s | %s", evText, roleText, rankText, deltaText)
   end
 
   local bestChance = tonumber(best.chance) or 0
-  return string.format("GoldMap %s\n%s | top chance %.1f%%", evText, dropsText, bestChance)
+  return string.format("GoldMap %s\n%s | %s | %s | %.1f%% top", evText, roleText, rankText, deltaText, bestChance)
 end
 
 function GoldMap.UnitOverlay:GetEvalForUnit(unit)
@@ -103,14 +105,7 @@ function GoldMap.UnitOverlay:EnsureTargetIcon()
     if not selfButton.eval then
       return
     end
-    GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-    GameTooltip:ClearLines()
-    GameTooltip:AddLine("|cffd4af37GoldMap|r Target")
-    GoldMap.PinTooltip:RenderMobInfo(GameTooltip, selfButton.eval.mob, selfButton.eval, {
-      showTitle = true,
-      maxLines = math.min(6, GoldMap.db.ui.maxTooltipItems),
-    })
-    GameTooltip:Show()
+    GoldMap.PinTooltip:ShowTargetEval(selfButton, selfButton.eval)
   end)
 
   icon:SetScript("OnLeave", function()

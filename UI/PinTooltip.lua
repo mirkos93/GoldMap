@@ -32,6 +32,26 @@ local function ReliabilityHint(label)
   return "low, scan more before trusting"
 end
 
+local function DifficultyColor(tier, groupRecommended)
+  if groupRecommended then
+    return 1.0, 0.45, 0.2
+  end
+  if tier <= 1 then
+    return 0.62, 0.62, 0.62
+  elseif tier == 2 then
+    return 0.12, 1.00, 0.00
+  elseif tier == 3 then
+    return 0.00, 0.44, 0.87
+  elseif tier == 4 then
+    return 0.64, 0.21, 0.93
+  end
+  return 1.00, 0.50, 0.00
+end
+
+local function ShouldShowSourceLabel()
+  return (IsShiftKeyDown and IsShiftKeyDown()) and (GoldMap.IsDebugEnabled and GoldMap:IsDebugEnabled())
+end
+
 function GoldMap.PinTooltip:RenderValueRows(tooltip, eval, context)
   if not eval then
     return false
@@ -138,7 +158,9 @@ function GoldMap.PinTooltip:RenderValueRows(tooltip, eval, context)
       1, 1, 1,
       1, 1, 1
     )
-    tooltip:AddDoubleLine("  Value from this item", valueLine, 0.65, 0.65, 0.65, 0.9, 0.9, 0.9)
+    if showTechnical then
+      tooltip:AddDoubleLine("  Value from this item", valueLine, 0.65, 0.65, 0.65, 0.9, 0.9, 0.9)
+    end
 
     shown = shown + 1
   end
@@ -167,7 +189,22 @@ function GoldMap.PinTooltip:RenderMobInfo(tooltip, mob, eval, context)
 
   if showTitle then
     tooltip:AddLine(titlePrefix .. mob.name, 1, 0.82, 0)
-    tooltip:AddLine("Level " .. levelText .. "  |  Source: " .. (eval.source or mob.source or "Seed DB"), 0.85, 0.85, 0.85)
+    if ShouldShowSourceLabel() then
+      tooltip:AddLine("Level " .. levelText .. "  |  Source: " .. (eval.source or mob.source or "Seed DB"), 0.85, 0.85, 0.85)
+    else
+      tooltip:AddLine("Level " .. levelText, 0.85, 0.85, 0.85)
+    end
+  end
+
+  if eval.difficultyLabel and context.showDifficulty ~= false then
+    local dR, dG, dB = DifficultyColor(eval.difficultyTier or 3, eval.groupRecommended)
+    local deltaText = eval.levelDelta and string.format("%+d", eval.levelDelta) or "?"
+    local rankText = eval.rankLabel or "Normal"
+    local roleText = eval.groupRecommended and "Group target" or "Solo-friendly"
+    tooltip:AddLine(
+      string.format("Difficulty: %s (%s)  |  Relative level: %s  |  Rank: %s", eval.difficultyLabel, roleText, deltaText, rankText),
+      dR, dG, dB
+    )
   end
 
   return self:RenderValueRows(tooltip, eval, {
@@ -188,7 +225,11 @@ function GoldMap.PinTooltip:RenderGatherInfo(tooltip, node, eval, context)
 
   if showTitle then
     tooltip:AddLine(titlePrefix .. node.name, 0.65, 1, 0.65)
-    tooltip:AddLine(profession .. "  |  Source: " .. (eval.source or node.source or "Seed DB"), 0.85, 0.85, 0.85)
+    if ShouldShowSourceLabel() then
+      tooltip:AddLine(profession .. "  |  Source: " .. (eval.source or node.source or "Seed DB"), 0.85, 0.85, 0.85)
+    else
+      tooltip:AddLine(profession, 0.85, 0.85, 0.85)
+    end
   end
 
   return self:RenderValueRows(tooltip, eval, {
@@ -214,12 +255,66 @@ function GoldMap.PinTooltip:Show(pin, payload)
   end
 
   if shown then
+    GameTooltip.goldMapTooltipKind = "PIN_PAYLOAD"
+    GameTooltip.goldMapTooltipOwner = pin
+    GameTooltip.goldMapTooltipPayload = payload
     GameTooltip:Show()
     return
   end
+  GameTooltip.goldMapTooltipKind = nil
+  GameTooltip.goldMapTooltipOwner = nil
+  GameTooltip.goldMapTooltipPayload = nil
   GameTooltip:Hide()
 end
 
+function GoldMap.PinTooltip:ShowTargetEval(owner, eval)
+  if not owner or not eval then
+    return
+  end
+
+  GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("|cffd4af37GoldMap|r Target")
+  self:RenderMobInfo(GameTooltip, eval.mob, eval, {
+    showTitle = true,
+    maxLines = math.min(6, GoldMap.db.ui.maxTooltipItems),
+  })
+  GameTooltip.goldMapTooltipKind = "TARGET_EVAL"
+  GameTooltip.goldMapTooltipOwner = owner
+  GameTooltip.goldMapTargetEval = eval
+  GameTooltip:Show()
+end
+
+function GoldMap.PinTooltip:RefreshIfShown()
+  if not GameTooltip or not GameTooltip:IsShown() then
+    return
+  end
+
+  local kind = GameTooltip.goldMapTooltipKind
+  if kind == "PIN_PAYLOAD" then
+    local owner = GameTooltip.goldMapTooltipOwner
+    local payload = GameTooltip.goldMapTooltipPayload
+    if owner and payload and owner.IsVisible and owner:IsVisible() then
+      self:Show(owner, payload)
+    end
+    return
+  end
+
+  if kind == "TARGET_EVAL" then
+    local owner = GameTooltip.goldMapTooltipOwner
+    local eval = GameTooltip.goldMapTargetEval
+    if owner and eval and owner.IsVisible and owner:IsVisible() then
+      self:ShowTargetEval(owner, eval)
+    end
+  end
+end
+
 function GoldMap.PinTooltip:Hide()
+  if GameTooltip then
+    GameTooltip.goldMapTooltipKind = nil
+    GameTooltip.goldMapTooltipOwner = nil
+    GameTooltip.goldMapTooltipPayload = nil
+    GameTooltip.goldMapTargetEval = nil
+  end
   GameTooltip:Hide()
 end

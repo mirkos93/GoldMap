@@ -11,6 +11,10 @@ local function BuildFilterSignature(filters)
     tostring(filters.maxDropRate),
     tostring(filters.minMobLevel),
     tostring(filters.maxMobLevel),
+    tostring(filters.hideRareMobs),
+    tostring(filters.difficultyScope),
+    tostring(filters.minDifficultyTier),
+    tostring(filters.maxDifficultyTier),
     tostring(filters.filterMode),
     tostring(filters.minEVGold),
     tostring(filters.maxEVGold),
@@ -19,6 +23,7 @@ local function BuildFilterSignature(filters)
     tostring(filters.minSellSpeedTier),
     tostring(filters.minQuality),
     tostring(filters.showNoPricePins),
+    tostring(UnitLevel and UnitLevel("player") or 0),
   }, "|")
 end
 
@@ -29,6 +34,101 @@ local function MobMatchesLevelRange(mob, minLevel, maxLevel)
     mobMax = mobMin
   end
   return mobMax >= minLevel and mobMin <= maxLevel
+end
+
+local RANK_LABELS = {
+  [0] = "Normal",
+  [1] = "Elite",
+  [2] = "Rare Elite",
+  [3] = "World Boss",
+  [4] = "Rare",
+}
+
+local function GetRankLabel(rank)
+  return RANK_LABELS[rank or 0] or "Normal"
+end
+
+local function GetPlayerLevel()
+  local level = UnitLevel and UnitLevel("player") or 0
+  if not level or level <= 0 then
+    return 1
+  end
+  return level
+end
+
+local function BuildDifficultyInfo(mob)
+  local playerLevel = GetPlayerLevel()
+  local mobMin = tonumber(mob.minLevel) or 1
+  local mobMax = tonumber(mob.maxLevel) or mobMin
+  if mobMax < mobMin then
+    mobMax = mobMin
+  end
+  local mobLevel = math.floor(((mobMin + mobMax) / 2) + 0.5)
+  local levelDelta = mobLevel - playerLevel
+  local rank = tonumber(mob.rank) or 0
+  local rankLabel = GetRankLabel(rank)
+
+  local groupRecommended = (rank == 2) or (rank == 3)
+  local tier = 3
+  local label = "Fair Fight"
+
+  if rank == 3 then
+    tier = 5
+    label = "World Boss (Group)"
+  elseif rank == 2 then
+    tier = 5
+    label = "Rare Elite (Group)"
+  elseif rank == 1 then
+    if levelDelta <= -8 then
+      tier = 3
+      label = "Old Elite (Soloable)"
+      groupRecommended = false
+    elseif levelDelta <= -4 then
+      tier = 4
+      label = "Elite (Hard Solo)"
+      groupRecommended = false
+    else
+      tier = 5
+      label = "Elite (Group)"
+      groupRecommended = true
+    end
+  else
+    if levelDelta <= -8 then
+      tier = 1
+      label = "Trivial Solo"
+    elseif levelDelta <= -4 then
+      tier = 2
+      label = "Easy Solo"
+    elseif levelDelta <= 2 then
+      tier = 3
+      label = "Fair Fight"
+    elseif levelDelta <= 5 then
+      tier = 4
+      label = "Hard Solo"
+    else
+      tier = 5
+      label = "Very Hard"
+    end
+
+    if rank == 4 then
+      if tier < 4 then
+        tier = tier + 1
+      end
+      label = "Rare Mob"
+    end
+  end
+
+  return {
+    playerLevel = playerLevel,
+    mobLevel = mobLevel,
+    levelDelta = levelDelta,
+    rank = rank,
+    rankLabel = rankLabel,
+    groupRecommended = groupRecommended,
+    soloFriendly = not groupRecommended,
+    tier = tier,
+    label = label,
+  }
 end
 
 function GoldMap.Evaluator:Init()
@@ -114,9 +214,33 @@ function GoldMap.Evaluator:EvaluateMob(npcID, mob)
   local maxEVCopper = math.floor(filters.maxEVGold * 10000)
   local minMobLevel = math.max(1, math.floor(filters.minMobLevel or 1))
   local maxMobLevel = math.max(minMobLevel, math.floor(filters.maxMobLevel or 63))
+  local difficultyScope = filters.difficultyScope or "ANY"
+  if difficultyScope ~= "ANY" and difficultyScope ~= "SOLO_ONLY" and difficultyScope ~= "GROUP_ONLY" then
+    difficultyScope = "ANY"
+  end
+  local minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
+  local maxDifficultyTier = math.max(minDifficultyTier, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
   local mode = (filters.filterMode == "ANY") and "ANY" or "ALL"
   local levelPass = MobMatchesLevelRange(mob, minMobLevel, maxMobLevel)
   local killablePass = mob.attackable ~= false
+  local rank = tonumber(mob.rank) or 0
+  local isRareMob = (rank == 4) or (rank == 2)
+  local rarePass = (filters.hideRareMobs ~= true) or (not isRareMob)
+  if not rarePass then
+    self.cache[npcID] = {
+      revision = revision,
+      filterSig = filterSig,
+      value = nil,
+    }
+    return nil
+  end
+  local difficultyInfo = BuildDifficultyInfo(mob)
+  local difficultyPass = difficultyInfo.tier >= minDifficultyTier and difficultyInfo.tier <= maxDifficultyTier
+  if difficultyScope == "SOLO_ONLY" then
+    difficultyPass = difficultyPass and (not difficultyInfo.groupRecommended)
+  elseif difficultyScope == "GROUP_ONLY" then
+    difficultyPass = difficultyPass and difficultyInfo.groupRecommended
+  end
   local chanceFilterActive = (filters.minDropRate or 0) > 0 or (filters.maxDropRate or 100) < 100
   local qualityFilterActive = (filters.minQuality or 0) > 0
   local priceFilterActive = minPriceCopper > 0
@@ -125,6 +249,7 @@ function GoldMap.Evaluator:EvaluateMob(npcID, mob)
   local includeNoPriceRows = filters.showNoPricePins and true or false
   local dropFilterActive = chanceFilterActive or qualityFilterActive or priceFilterActive or reliabilityFilterActive or sellSpeedFilterActive
   local levelFilterActive = minMobLevel > 1 or maxMobLevel < 63
+  local difficultyFilterActive = difficultyScope ~= "ANY" or minDifficultyTier > 1 or maxDifficultyTier < 5
   local evFilterActive = minEVCopper > 0 or maxEVCopper < math.floor(999999 * 10000)
 
   local rows = {}
@@ -230,10 +355,13 @@ function GoldMap.Evaluator:EvaluateMob(npcID, mob)
 
   local passesFilters
   if mode == "ALL" then
-    passesFilters = levelPass and dropPass and evPass
+    passesFilters = levelPass and difficultyPass and dropPass and evPass
   else
     local activeCount = 0
     if levelFilterActive then
+      activeCount = activeCount + 1
+    end
+    if difficultyFilterActive then
       activeCount = activeCount + 1
     end
     if dropFilterActive then
@@ -248,6 +376,7 @@ function GoldMap.Evaluator:EvaluateMob(npcID, mob)
     else
       passesFilters =
         (levelFilterActive and levelPass) or
+        (difficultyFilterActive and difficultyPass) or
         (dropFilterActive and dropPass) or
         (evFilterActive and evPass)
     end
@@ -276,6 +405,17 @@ function GoldMap.Evaluator:EvaluateMob(npcID, mob)
     bestDrop = rows[1],
     scanAgeSeconds = GoldMap:GetSecondsSinceLastScan(),
     levelPass = levelPass,
+    difficultyTier = difficultyInfo.tier,
+    difficultyLabel = difficultyInfo.label,
+    difficultyScope = difficultyScope,
+    difficultyPass = difficultyPass,
+    groupRecommended = difficultyInfo.groupRecommended,
+    soloFriendly = difficultyInfo.soloFriendly,
+    playerLevel = difficultyInfo.playerLevel,
+    mobLevel = difficultyInfo.mobLevel,
+    levelDelta = difficultyInfo.levelDelta,
+    rank = difficultyInfo.rank,
+    rankLabel = difficultyInfo.rankLabel,
     killablePass = killablePass,
     dropPass = dropPass,
     evPass = evPass,

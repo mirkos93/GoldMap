@@ -6,6 +6,11 @@
 ## SavedVariables: GoldMapDB, GoldMapPriceCache
 ## Dependencies: Auctionator
 
+Libs/LibStub/LibStub.lua
+Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
+Libs/HereBeDragons-2.0.lua
+Libs/HereBeDragons-Pins-2.0.lua
+
 Utils/Ids.lua
 Utils/Cache.lua
 Utils/Throttle.lua
@@ -24,9 +29,11 @@ Core/GatherEvaluator.lua
 AHScan/Utils.lua
 AHScan/Cache.lua
 AHScan/Scanner.lua
+Core/ScanAdvisor.lua
 
 UI/PinTooltip.lua
 UI/MobTooltip.lua
+UI/ItemTooltip.lua
 UI/MinimapButton.lua
 UI/WorldMapButton.lua
 UI/Options.lua
