@@ -36,27 +36,55 @@ end
 
 local function GetLiveAuctionatorPrice(itemID, itemLink)
   if not (Auctionator and Auctionator.API and Auctionator.API.v1) then
-    return nil, nil
+    return nil, nil, nil
   end
 
   local api = Auctionator.API.v1
   local callerID = "GoldMap"
+  local rawPrice = nil
+  local source = nil
 
   if itemLink and type(api.GetAuctionPriceByItemLink) == "function" then
     local okLink, valueLink = pcall(api.GetAuctionPriceByItemLink, callerID, itemLink)
     if okLink and type(valueLink) == "number" and valueLink > 0 then
-      return valueLink, "auctionator_link"
+      rawPrice = valueLink
+      source = "auctionator_link"
     end
   end
 
-  if itemID and type(api.GetAuctionPriceByItemID) == "function" then
+  if not rawPrice and itemID and type(api.GetAuctionPriceByItemID) == "function" then
     local okID, valueID = pcall(api.GetAuctionPriceByItemID, callerID, itemID)
     if okID and type(valueID) == "number" and valueID > 0 then
-      return valueID, "auctionator_item"
+      rawPrice = valueID
+      source = "auctionator_item"
     end
   end
 
-  return nil, nil
+  if not rawPrice then
+    return nil, nil, nil
+  end
+
+  local exact = nil
+  if itemID and type(api.IsAuctionDataExactByItemID) == "function" then
+    local okExact, exactValue = pcall(api.IsAuctionDataExactByItemID, callerID, itemID)
+    if okExact and type(exactValue) == "boolean" then
+      exact = exactValue
+    end
+  end
+
+  local robustPrice = rawPrice
+  local adjusted = false
+  local guard = nil
+  if GoldMap.AHCache and type(GoldMap.AHCache.ApplyRobustPriceModel) == "function" then
+    robustPrice, adjusted, guard = GoldMap.AHCache:ApplyRobustPriceModel(itemID, rawPrice, nil, exact)
+    robustPrice = robustPrice or rawPrice
+  end
+
+  return robustPrice, source, {
+    rawPrice = rawPrice,
+    adjusted = adjusted and true or false,
+    guard = guard,
+  }
 end
 
 function GoldMap.ItemTooltip:IsEnabled()
@@ -93,17 +121,18 @@ function GoldMap.ItemTooltip:TryInject(tooltip)
     return
   end
 
-  local price = GoldMap.AHCache:Get(itemID)
-  local livePrice, liveSource = GetLiveAuctionatorPrice(itemID, itemLink)
+  local record = GoldMap.AHCache:GetRecord(itemID)
+  local price = record and record.price or nil
+  local livePrice, liveSource, liveMeta = GetLiveAuctionatorPrice(itemID, itemLink)
   local displayPrice = nil
   local displaySource = nil
 
-  if livePrice and livePrice > 0 then
-    displayPrice = livePrice
-    displaySource = liveSource
-  elseif price and price > 0 then
+  if price and price > 0 then
     displayPrice = price
     displaySource = "cache"
+  elseif livePrice and livePrice > 0 then
+    displayPrice = livePrice
+    displaySource = liveSource
   end
 
   local sellTier, sellLabel, sellScore, sellMeta = GoldMap.AHCache:GetSellSpeed(itemID)
@@ -146,6 +175,13 @@ function GoldMap.ItemTooltip:TryInject(tooltip)
       tooltip:AddLine("Source: Auctionator exact item (link match)", 0.62, 0.62, 0.62)
     elseif displaySource == "auctionator_item" then
       tooltip:AddLine("Source: Auctionator item-level market data", 0.62, 0.62, 0.62)
+    elseif displaySource == "cache" then
+      tooltip:AddLine("Source: GoldMap synced market cache", 0.62, 0.62, 0.62)
+    end
+
+    local adjusted = (record and record.priceAdjusted) or (liveMeta and liveMeta.adjusted)
+    if adjusted and IsShiftKeyDown and IsShiftKeyDown() then
+      tooltip:AddLine("Outlier guard applied to avoid misleading AH spikes.", 0.90, 0.75, 0.35)
     end
 
     tooltip.goldMapItemTooltipID = itemID

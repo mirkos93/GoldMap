@@ -2,7 +2,7 @@ local _, GoldMap = ...
 GoldMap = GoldMap or {}
 
 GoldMap.AHCache = GoldMap.AHCache or {}
-local PRICE_MODEL_VERSION = 2
+local PRICE_MODEL_VERSION = 3
 local SafeAuctionatorCall
 
 local function EnsureRecordMetadata(record, now)
@@ -26,6 +26,47 @@ local function Clamp(value, low, high)
   return value
 end
 
+local function SortedCopy(values)
+  local copy = {}
+  if type(values) ~= "table" then
+    return copy
+  end
+  for _, value in ipairs(values) do
+    if type(value) == "number" and value > 0 then
+      copy[#copy + 1] = value
+    end
+  end
+  table.sort(copy)
+  return copy
+end
+
+local function Percentile(sortedValues, p)
+  if type(sortedValues) ~= "table" then
+    return nil
+  end
+  local count = #sortedValues
+  if count == 0 then
+    return nil
+  end
+  if count == 1 then
+    return sortedValues[1]
+  end
+  local pct = tonumber(p) or 0.5
+  if pct < 0 then
+    pct = 0
+  elseif pct > 1 then
+    pct = 1
+  end
+  local index = ((count - 1) * pct) + 1
+  local lower = math.floor(index)
+  local upper = math.ceil(index)
+  if lower == upper then
+    return sortedValues[lower]
+  end
+  local alpha = index - lower
+  return (sortedValues[lower] * (1 - alpha)) + (sortedValues[upper] * alpha)
+end
+
 local function BuildBasicItemLink(itemID)
   if type(itemID) ~= "number" then
     return nil
@@ -35,9 +76,9 @@ end
 
 GoldMap.AHCache.SellSpeedTiers = {
   [0] = { label = "None", color = { 0.62, 0.62, 0.62 }, colorCode = "ff9d9d9d" },
-  [1] = { label = "Low", color = { 0.12, 1.00, 0.00 }, colorCode = "ff1eff00" },
-  [2] = { label = "Medium", color = { 0.00, 0.44, 0.87 }, colorCode = "ff0070dd" },
-  [3] = { label = "High", color = { 0.64, 0.21, 0.93 }, colorCode = "ffa335ee" },
+  [1] = { label = "Low", color = { 1.00, 0.20, 0.20 }, colorCode = "ffff3333" },
+  [2] = { label = "Medium", color = { 1.00, 0.72, 0.00 }, colorCode = "ffffb800" },
+  [3] = { label = "High", color = { 0.12, 1.00, 0.00 }, colorCode = "ff1eff00" },
 }
 
 GoldMap.AHCache.ConfidenceTiers = {
@@ -88,12 +129,17 @@ function GoldMap.AHCache:Init()
   }
   self.data = GoldMapPriceCache
   self.signalCache = self.signalCache or {}
+  self.anchorCache = self.anchorCache or {}
   self.legacyRepairTried = self.legacyRepairTried or {}
+end
+
+function GoldMap.AHCache:GetPriceModelVersion()
+  return PRICE_MODEL_VERSION
 end
 
 function GoldMap.AHCache:ResolveAuctionatorPriceCandidates(itemID)
   if type(itemID) ~= "number" or not self:IsAuctionatorAvailable() then
-    return nil, nil, nil
+    return nil, nil, nil, false, nil, nil
   end
 
   local api = Auctionator.API.v1
@@ -119,8 +165,185 @@ function GoldMap.AHCache:ResolveAuctionatorPriceCandidates(itemID)
     priceByItemID = nil
   end
 
-  local effectivePrice = priceByLink or priceByItemID
-  return effectivePrice, priceByItemID, priceByLink
+  local rawPrice = priceByLink or priceByItemID
+  if not rawPrice then
+    return nil, priceByItemID, priceByLink, false, nil, nil
+  end
+
+  local effectivePrice, adjusted, guard = self:ApplyRobustPriceModel(itemID, rawPrice, nil, nil)
+  return effectivePrice, priceByItemID, priceByLink, adjusted, guard, rawPrice
+end
+
+function GoldMap.AHCache:GetHistoricalAnchor(itemID)
+  if type(itemID) ~= "number" then
+    return nil
+  end
+
+  local revision = self:GetRevision()
+  local now = GetServerTime()
+  local cached = self.anchorCache and self.anchorCache[itemID]
+  if cached and cached.revision == revision and cached.expireAt and cached.expireAt > now then
+    return cached.data
+  end
+
+  local anchor = {
+    mean7 = nil,
+    mean14 = nil,
+    median14 = nil,
+    samples14 = 0,
+    historyDays = nil,
+  }
+
+  if Auctionator and Auctionator.Database then
+    if type(Auctionator.Database.GetMeanPrice) == "function" then
+      local mean7, ok7 = SafeAuctionatorCall(Auctionator.Database.GetMeanPrice, Auctionator.Database, tostring(itemID), 7)
+      if ok7 and type(mean7) == "number" and mean7 > 0 then
+        anchor.mean7 = mean7
+      end
+
+      local mean14, ok14 = SafeAuctionatorCall(Auctionator.Database.GetMeanPrice, Auctionator.Database, tostring(itemID), 14)
+      if ok14 and type(mean14) == "number" and mean14 > 0 then
+        anchor.mean14 = mean14
+      end
+    end
+
+    if type(Auctionator.Database.GetPriceHistory) == "function" then
+      local history, okHistory = SafeAuctionatorCall(Auctionator.Database.GetPriceHistory, Auctionator.Database, tostring(itemID))
+      if okHistory and type(history) == "table" and #history > 0 then
+        local newestDay = nil
+        local oldestDay = nil
+        local dayPrices = {}
+        for _, row in ipairs(history) do
+          local rawDay = tonumber(row and row.rawDay)
+          local minSeen = tonumber(row and row.minSeen)
+          if rawDay then
+            newestDay = newestDay and math.max(newestDay, rawDay) or rawDay
+            oldestDay = oldestDay and math.min(oldestDay, rawDay) or rawDay
+            if minSeen and minSeen > 0 then
+              dayPrices[#dayPrices + 1] = {
+                day = rawDay,
+                price = minSeen,
+              }
+            end
+          end
+        end
+
+        if newestDay and oldestDay then
+          anchor.historyDays = math.max(1, newestDay - oldestDay + 1)
+        end
+
+        if #dayPrices > 0 and newestDay then
+          local recent = {}
+          for _, entry in ipairs(dayPrices) do
+            if (newestDay - entry.day) <= 13 then
+              recent[#recent + 1] = entry.price
+            end
+          end
+
+          if #recent > 0 then
+            local sortedRecent = SortedCopy(recent)
+            anchor.median14 = Percentile(sortedRecent, 0.50)
+            anchor.samples14 = #sortedRecent
+          end
+        end
+      end
+    end
+  end
+
+  if self.anchorCache then
+    self.anchorCache[itemID] = {
+      revision = revision,
+      expireAt = now + 300,
+      data = anchor,
+    }
+  end
+
+  return anchor
+end
+
+function GoldMap.AHCache:ApplyRobustPriceModel(itemID, rawPrice, _signals, exactHint)
+  if type(rawPrice) ~= "number" or rawPrice <= 0 then
+    return nil, false, nil
+  end
+
+  local anchor = self:GetHistoricalAnchor(itemID)
+  local reference = nil
+  local historyDays = nil
+  local historySamples = 0
+  if anchor then
+    reference = anchor.mean7 or anchor.mean14 or anchor.median14
+    historyDays = tonumber(anchor.historyDays)
+    historySamples = tonumber(anchor.samples14) or 0
+  end
+
+  local exact = (type(exactHint) == "boolean") and exactHint or nil
+  if not reference or reference <= 0 then
+    return math.max(1, math.floor(rawPrice + 0.5)), false, {
+      rawPrice = rawPrice,
+      referencePrice = nil,
+      reason = nil,
+    }
+  end
+
+  local capRatio = 10
+  if historySamples <= 2 then
+    capRatio = 5
+  elseif historySamples <= 5 then
+    capRatio = 7
+  elseif historySamples <= 9 then
+    capRatio = 9
+  elseif historySamples >= 18 then
+    capRatio = 12
+  end
+
+  if historyDays and historyDays <= 3 then
+    capRatio = math.min(capRatio, 6)
+  elseif historyDays and historyDays <= 7 then
+    capRatio = math.min(capRatio, 8)
+  end
+
+  if exact == true then
+    capRatio = capRatio + 1
+  end
+
+  local adjusted = false
+  local reason = nil
+  local robust = rawPrice
+  local capPrice = math.max(1, math.floor((reference * capRatio) + 0.5))
+  if robust > capPrice then
+    robust = capPrice
+    adjusted = true
+    reason = "high_outlier_cap"
+  end
+
+  if robust > (reference * 2) then
+    local alpha = 0.22
+    if historySamples >= 10 then
+      alpha = 0.35
+    elseif historySamples >= 6 then
+      alpha = 0.28
+    end
+    local blended = math.floor(((reference * (1 - alpha)) + (robust * alpha)) + 0.5)
+    blended = math.max(1, blended)
+    if blended < robust then
+      robust = blended
+      adjusted = true
+      if not reason then
+        reason = "history_blend"
+      end
+    end
+  end
+
+  robust = math.max(1, math.floor(robust + 0.5))
+  return robust, adjusted, {
+    rawPrice = rawPrice,
+    referencePrice = reference,
+    capRatio = capRatio,
+    capPrice = capPrice,
+    reason = reason,
+    historySamples = historySamples,
+    historyDays = historyDays,
+  }
 end
 
 function GoldMap.AHCache:TryRepairLegacyRecord(itemID, record)
@@ -139,7 +362,7 @@ function GoldMap.AHCache:TryRepairLegacyRecord(itemID, record)
 
   self.legacyRepairTried[itemID] = true
 
-  local effectivePrice, priceByItemID, priceByLink = self:ResolveAuctionatorPriceCandidates(itemID)
+  local effectivePrice, priceByItemID, priceByLink, adjusted, guard, rawPrice = self:ResolveAuctionatorPriceCandidates(itemID)
   if not effectivePrice or effectivePrice <= 0 then
     record.priceModelVersion = PRICE_MODEL_VERSION
     return record
@@ -147,10 +370,21 @@ function GoldMap.AHCache:TryRepairLegacyRecord(itemID, record)
 
   local oldPrice = tonumber(record.price) or 0
   record.price = effectivePrice
+  record.rawPrice = rawPrice or effectivePrice
   record.priceByItemID = priceByItemID
   record.priceByLink = priceByLink
   record.priceSourceType = priceByLink and "link" or "itemid"
   record.priceModelVersion = PRICE_MODEL_VERSION
+  record.priceAdjusted = adjusted and true or nil
+  if adjusted and guard then
+    record.priceGuardReason = guard.reason
+    record.priceGuardRef = guard.referencePrice
+    record.priceGuardCap = guard.capPrice
+  else
+    record.priceGuardReason = nil
+    record.priceGuardRef = nil
+    record.priceGuardCap = nil
+  end
   if priceByLink and priceByItemID and priceByLink > 0 and priceByItemID > 0 then
     local high = math.max(priceByLink, priceByItemID)
     local low = math.max(1, math.min(priceByLink, priceByItemID))
@@ -268,8 +502,14 @@ function GoldMap.AHCache:InvalidateSignalCache(itemID)
   end
   if itemID then
     self.signalCache[itemID] = nil
+    if self.anchorCache then
+      self.anchorCache[itemID] = nil
+    end
   else
     self.signalCache = {}
+    if self.anchorCache then
+      self.anchorCache = {}
+    end
   end
 end
 
@@ -335,8 +575,8 @@ function GoldMap.AHCache:ImportFromAuctionator(itemSet, maxAgeDays)
         priceByItemID = nil
       end
 
-      local price = priceByLink or priceByItemID
-      if type(price) == "number" and price > 0 then
+      local rawPrice = priceByLink or priceByItemID
+      if type(rawPrice) == "number" and rawPrice > 0 then
         stats.priced = stats.priced + 1
         local ageDays = nil
         local exact = nil
@@ -367,11 +607,13 @@ function GoldMap.AHCache:ImportFromAuctionator(itemSet, maxAgeDays)
         end
 
         if withinAge then
+          local robustPrice, adjusted, guard = self:ApplyRobustPriceModel(itemID, rawPrice, nil, exact)
           local existing = self.data.items[itemID]
           local firstSeenAt = existing and existing.firstSeenAt or now
           local samples = (existing and tonumber(existing.samples) or 0) + 1
           self.data.items[itemID] = {
-            price = price,
+            price = robustPrice or rawPrice,
+            rawPrice = rawPrice,
             source = "auctionator_api",
             priceSourceType = priceByLink and "link" or "itemid",
             priceByItemID = priceByItemID,
@@ -382,6 +624,10 @@ function GoldMap.AHCache:ImportFromAuctionator(itemSet, maxAgeDays)
             samples = math.max(1, samples),
             sourceAgeDays = (type(ageDays) == "number" and ageDays >= 0) and ageDays or nil,
             sourceExact = (type(exact) == "boolean") and exact or nil,
+            priceAdjusted = adjusted and true or nil,
+            priceGuardReason = (adjusted and guard) and guard.reason or nil,
+            priceGuardRef = (adjusted and guard) and guard.referencePrice or nil,
+            priceGuardCap = (adjusted and guard) and guard.capPrice or nil,
           }
           stats.imported = stats.imported + 1
           updatedAny = true
@@ -423,6 +669,12 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
     availableAvg = nil,
     availableLatest = nil,
     volatilityPct = nil,
+    historyMean7 = nil,
+    historyMean14 = nil,
+    recentMedianMin = nil,
+    recentP25Min = nil,
+    recentP75Min = nil,
+    recentSamples = 0,
   }
 
   if self:IsAuctionatorAvailable() then
@@ -446,6 +698,18 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
   end
 
   if Auctionator and Auctionator.Database and type(Auctionator.Database.GetPriceHistory) == "function" then
+    if type(Auctionator.Database.GetMeanPrice) == "function" then
+      local mean7, okMean7 = SafeAuctionatorCall(Auctionator.Database.GetMeanPrice, Auctionator.Database, tostring(itemID), 7)
+      if okMean7 and type(mean7) == "number" and mean7 > 0 then
+        signals.historyMean7 = mean7
+      end
+
+      local mean14, okMean14 = SafeAuctionatorCall(Auctionator.Database.GetMeanPrice, Auctionator.Database, tostring(itemID), 14)
+      if okMean14 and type(mean14) == "number" and mean14 > 0 then
+        signals.historyMean14 = mean14
+      end
+    end
+
     local history, okHistory = SafeAuctionatorCall(Auctionator.Database.GetPriceHistory, Auctionator.Database, tostring(itemID))
     if okHistory and type(history) == "table" and #history > 0 then
       signals.hasHistory = true
@@ -457,6 +721,7 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
       local availableSum = 0
       local availableSamples = 0
       local activityDays7 = {}
+      local dayMinRows = {}
 
       for index, row in ipairs(history) do
         local rawDay = tonumber(row and row.rawDay)
@@ -483,6 +748,12 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
         local rowMax = tonumber(row and row.maxSeen)
         if rowMin then
           minSeen = minSeen and math.min(minSeen, rowMin) or rowMin
+          if rawDay then
+            dayMinRows[#dayMinRows + 1] = {
+              day = rawDay,
+              value = rowMin,
+            }
+          end
         end
         if rowMax then
           maxSeen = maxSeen and math.max(maxSeen, rowMax) or rowMax
@@ -506,6 +777,22 @@ function GoldMap.AHCache:GetAuctionatorSignals(itemID)
 
       if minSeen and minSeen > 0 and maxSeen then
         signals.volatilityPct = ((maxSeen - minSeen) / minSeen) * 100
+      end
+
+      if newestRawDay and #dayMinRows > 0 then
+        local recent = {}
+        for _, entry in ipairs(dayMinRows) do
+          if (newestRawDay - entry.day) <= 13 then
+            recent[#recent + 1] = entry.value
+          end
+        end
+        if #recent > 0 then
+          local sortedRecent = SortedCopy(recent)
+          signals.recentMedianMin = Percentile(sortedRecent, 0.50)
+          signals.recentP25Min = Percentile(sortedRecent, 0.25)
+          signals.recentP75Min = Percentile(sortedRecent, 0.75)
+          signals.recentSamples = #sortedRecent
+        end
       end
     end
   end
@@ -543,8 +830,11 @@ function GoldMap.AHCache:GetSellSpeed(itemID)
         end
       end
 
+      local robustPrice, adjusted, guard = self:ApplyRobustPriceModel(itemID, livePrice, nil, liveExact)
+
       record = {
-        price = livePrice,
+        price = robustPrice or livePrice,
+        rawPrice = livePrice,
         source = "auctionator_live_tooltip",
         priceSourceType = "itemid",
         priceByItemID = livePrice,
@@ -555,6 +845,10 @@ function GoldMap.AHCache:GetSellSpeed(itemID)
         samples = 1,
         sourceAgeDays = liveAgeDays,
         sourceExact = liveExact,
+        priceAdjusted = adjusted and true or nil,
+        priceGuardReason = (adjusted and guard) and guard.reason or nil,
+        priceGuardRef = (adjusted and guard) and guard.referencePrice or nil,
+        priceGuardCap = (adjusted and guard) and guard.capPrice or nil,
       }
     end
   end
@@ -773,6 +1067,11 @@ function GoldMap.AHCache:GetConfidence(itemID)
     if type(record.sourceAgeDays) == "number" and record.sourceAgeDays > 3 then
       score = score - 4
     end
+  end
+
+  if record.priceAdjusted then
+    -- A defensive clamp was applied due to an outlier listing.
+    score = score - 8
   end
 
   score = Clamp(math.floor(score + 0.5), 0, 100)
