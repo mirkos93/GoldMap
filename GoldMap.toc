@@ -2,7 +2,7 @@
 ## Title: GoldMap
 ## Notes: Highlights profitable farm targets on the World Map using seed droprates and AH prices.
 ## Author: Mirko + Codex
-## Version: 0.1.1-beta
+## Version: 0.1.2-beta
 ## SavedVariables: GoldMapDB, GoldMapPriceCache
 ## Dependencies: Auctionator
 

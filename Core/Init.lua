@@ -27,7 +27,7 @@ if type(GoldMap.GatherEvaluator.EvaluateNodeByID) ~= "function" then
 end
 
 GoldMap.addonName = addonName
-GoldMap.version = "0.1.1-beta"
+GoldMap.version = "0.1.2-beta"
 
 GoldMapData = GoldMapData or {}
 
