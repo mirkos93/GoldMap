@@ -347,20 +347,13 @@ function GoldMap.Options:Init()
   visDesc:SetPoint("TOPLEFT", visTitle, "BOTTOMLEFT", 0, -8)
   visDesc:SetWidth(520)
   visDesc:SetJustifyH("LEFT")
-  visDesc:SetText("These toggles impact which targets are allowed to show on map, minimap, overlays, and tooltips.")
-
-  local showNoPrice = MakeCheckbox(
-    visibility,
-    "Include targets with no market price yet",
-    "If disabled, only targets with at least one priced drop are shown"
-  )
-  showNoPrice:SetPoint("TOPLEFT", visDesc, "BOTTOMLEFT", -2, -14)
+  visDesc:SetText("These global toggles impact map, minimap, overlays, and tooltips.")
 
   local visNote = visibility:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-  visNote:SetPoint("TOPLEFT", showNoPrice, "BOTTOMLEFT", 6, -12)
+  visNote:SetPoint("TOPLEFT", visDesc, "BOTTOMLEFT", 6, -14)
   visNote:SetWidth(520)
   visNote:SetJustifyH("LEFT")
-  visNote:SetText("Mob targets are always filtered to attackable/farmable units. Changes here refresh map pins, overlays, and tooltips immediately.")
+  visNote:SetText("Use World Map Filters for farm criteria (droprate, EV, item price, reliability, selling speed, no-price targets). Mob targets are always attackable/farmable only.")
 
   local visibilityBottom = visNote:GetBottom() or 0
   local visibilityTop = visibility:GetTop() or 0
@@ -681,10 +674,8 @@ function GoldMap.Options:Init()
     showPins:SetChecked(GoldMap.db.ui.showPins)
     showMinimapPins:SetChecked(GoldMap.db.ui.showMinimapPins)
     showMinimapButton:SetChecked(not GoldMap.db.ui.hideMinimapButton)
-    showNoPrice:SetChecked(GoldMap.db.filters.showNoPricePins)
     showItemTooltipSignals:SetChecked(GoldMap.db.ui.showItemTooltipMarket ~= false)
     advisorEnabled:SetChecked(GoldMap.db.scanner.scanAdvisorEnabled ~= false)
-    GoldMap.db.scanner.useAuctionatorData = true
     debugMode:SetChecked(GoldMap:IsDebugEnabled())
 
     maxPinsInput:SetNumber(GoldMap.db.ui.maxVisiblePins)
@@ -760,11 +751,6 @@ function GoldMap.Options:Init()
     if GoldMap.MinimapButton then
       GoldMap.MinimapButton:RefreshVisibility()
     end
-  end)
-
-  showNoPrice:SetScript("OnClick", function(selfButton)
-    GoldMap.db.filters.showNoPricePins = selfButton:GetChecked() and true or false
-    GoldMap:NotifyFiltersChanged()
   end)
 
   showItemTooltipSignals:SetScript("OnClick", function(selfButton)

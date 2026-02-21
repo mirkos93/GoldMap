@@ -13,15 +13,12 @@ local TAB_DEFS = {
 
 local PRESET_FILTER_KEYS = {
   "showMobTargets",
-  "showGatherTargets",
   "showHerbTargets",
   "showOreTargets",
   "minDropRate",
   "maxDropRate",
   "minEVGold",
   "maxEVGold",
-  "gatherMinDropRate",
-  "gatherMaxDropRate",
   "gatherMinEVGold",
   "gatherMaxEVGold",
   "minItemPriceGold",
@@ -199,9 +196,9 @@ function GoldMap.FilterPanel:CreateSellSpeedDropdown(parent, frameName, onValueS
 
   local tiers = {
     { value = 0, text = "|cff9d9d9dNone (no minimum)|r" },
-    { value = 1, text = "|cff1eff00Low or better|r" },
-    { value = 2, text = "|cff0070ddMedium or better|r" },
-    { value = 3, text = "|cffa335eeHigh only|r" },
+    { value = 1, text = "|cffff3333Low or better|r" },
+    { value = 2, text = "|cffffb800Medium or better|r" },
+    { value = 3, text = "|cff1eff00High only|r" },
   }
 
   UIDropDownMenu_SetWidth(dropdown, 200)
@@ -362,14 +359,27 @@ function GoldMap.FilterPanel:ApplyPresetData(data)
       filters[key] = data[key]
     end
   end
-  local gatherEnabled = filters.showGatherTargets ~= false
+
+  -- Backward compatibility for old custom presets that had separate gather drop-rate fields.
+  if data.minDropRate == nil and data.gatherMinDropRate ~= nil then
+    filters.minDropRate = data.gatherMinDropRate
+  end
+  if data.maxDropRate == nil and data.gatherMaxDropRate ~= nil then
+    filters.maxDropRate = data.gatherMaxDropRate
+  end
+
+  local legacyGatherEnabled = data.showGatherTargets
+  if legacyGatherEnabled == nil then
+    legacyGatherEnabled = true
+  else
+    legacyGatherEnabled = legacyGatherEnabled ~= false
+  end
   if data.showHerbTargets == nil then
-    filters.showHerbTargets = gatherEnabled
+    filters.showHerbTargets = legacyGatherEnabled
   end
   if data.showOreTargets == nil then
-    filters.showOreTargets = gatherEnabled
+    filters.showOreTargets = legacyGatherEnabled
   end
-  filters.showGatherTargets = (filters.showHerbTargets ~= false) or (filters.showOreTargets ~= false)
   if data.difficultyScope == nil then
     filters.difficultyScope = "ANY"
   end
@@ -387,8 +397,6 @@ function GoldMap.FilterPanel:ApplyPresetData(data)
   if filters.maxDifficultyTier < filters.minDifficultyTier then
     filters.maxDifficultyTier = filters.minDifficultyTier
   end
-  filters.onlyKillableForPlayer = true
-
   self.hasPendingInputChanges = false
   self:SyncInputsFromDB()
   GoldMap:NotifyFiltersChanged()
@@ -580,8 +588,6 @@ function GoldMap.FilterPanel:ApplyInputs()
   end
 
   local filters = GoldMap.db.filters
-  filters.onlyKillableForPlayer = true
-
   filters.minDropRate = math.max(0, math.min(100, ParseNumber(self.inputs.minDrop:GetText(), filters.minDropRate)))
   filters.maxDropRate = math.max(filters.minDropRate, math.min(100, ParseNumber(self.inputs.maxDrop:GetText(), filters.maxDropRate)))
   filters.minEVGold = math.max(0, ParseNumber(self.inputs.minEV:GetText(), filters.minEVGold))
@@ -602,20 +608,18 @@ end
 
 function GoldMap.FilterPanel:SyncInputsFromDB()
   local filters = GoldMap.db.filters
-  filters.onlyKillableForPlayer = true
   if filters.difficultyScope ~= "ANY" and filters.difficultyScope ~= "SOLO_ONLY" and filters.difficultyScope ~= "GROUP_ONLY" then
     filters.difficultyScope = "ANY"
   end
   filters.minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
   filters.maxDifficultyTier = math.max(filters.minDifficultyTier, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
-  local gatherEnabled = filters.showGatherTargets ~= false
   local showHerbTargets = filters.showHerbTargets
   local showOreTargets = filters.showOreTargets
   if showHerbTargets == nil then
-    showHerbTargets = gatherEnabled
+    showHerbTargets = true
   end
   if showOreTargets == nil then
-    showOreTargets = gatherEnabled
+    showOreTargets = true
   end
 
   self.inputs.minDrop:SetText(string.format("%.2f", filters.minDropRate))
@@ -694,10 +698,8 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     end
   end
 
-  f.onlyKillableForPlayer = true
   f.hideRareMobs = false
   f.showMobTargets = true
-  f.showGatherTargets = true
   f.showHerbTargets = true
   f.showOreTargets = true
   f.difficultyScope = "ANY"
@@ -709,8 +711,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 3
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 5
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 2
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 0.1
@@ -733,8 +733,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 6
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 2
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 5
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 0.25
@@ -757,8 +755,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 20
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 0.2
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 18
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 2
@@ -781,8 +777,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 0
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 0
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 0
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 0
@@ -805,8 +799,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 1.5
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 8
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 1.5
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 0.1
@@ -829,8 +821,6 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
     f.maxDropRate = 100
     f.minEVGold = 12
     f.maxEVGold = 999999
-    f.gatherMinDropRate = 0.1
-    f.gatherMaxDropRate = 100
     f.gatherMinEVGold = 10
     f.gatherMaxEVGold = 999999
     f.gatherMinItemPriceGold = 1
@@ -959,7 +949,6 @@ function GoldMap.FilterPanel:BuildQuickPage(page)
   showHerbTargets:SetPoint("TOPLEFT", 10, page.state.y + 6)
   showHerbTargets:SetScript("OnClick", function(selfButton)
     GoldMap.db.filters.showHerbTargets = selfButton:GetChecked() and true or false
-    GoldMap.db.filters.showGatherTargets = (GoldMap.db.filters.showHerbTargets ~= false) or (GoldMap.db.filters.showOreTargets ~= false)
     GoldMap:NotifyFiltersChanged()
   end)
   self.inputs.showHerbTargets = showHerbTargets
@@ -969,7 +958,6 @@ function GoldMap.FilterPanel:BuildQuickPage(page)
   showOreTargets:SetPoint("TOPLEFT", 10, page.state.y + 6)
   showOreTargets:SetScript("OnClick", function(selfButton)
     GoldMap.db.filters.showOreTargets = selfButton:GetChecked() and true or false
-    GoldMap.db.filters.showGatherTargets = (GoldMap.db.filters.showHerbTargets ~= false) or (GoldMap.db.filters.showOreTargets ~= false)
     GoldMap:NotifyFiltersChanged()
   end)
   self.inputs.showOreTargets = showOreTargets
@@ -1378,7 +1366,6 @@ function GoldMap.FilterPanel:Init()
     for key, value in pairs(defaults) do
       GoldMap.db.filters[key] = value
     end
-    GoldMap.db.filters.onlyKillableForPlayer = true
     self:SyncInputsFromDB()
     GoldMap:NotifyFiltersChanged()
   end)
@@ -1392,7 +1379,6 @@ function GoldMap.FilterPanel:Init()
   end)
 
   frame:SetScript("OnShow", function()
-    GoldMap.db.filters.onlyKillableForPlayer = true
     self:SyncInputsFromDB()
     self:RefreshCustomPresetDropdown()
     if not self.activeTab then

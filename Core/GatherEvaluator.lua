@@ -5,11 +5,10 @@ GoldMap.GatherEvaluator = GoldMap.GatherEvaluator or {}
 
 local function BuildFilterSignature(filters)
   return table.concat({
-    tostring(filters.showGatherTargets),
     tostring(filters.showHerbTargets),
     tostring(filters.showOreTargets),
-    tostring(filters.gatherMinDropRate),
-    tostring(filters.gatherMaxDropRate),
+    tostring(filters.minDropRate),
+    tostring(filters.maxDropRate),
     tostring(filters.filterMode),
     tostring(filters.gatherMinEVGold),
     tostring(filters.gatherMaxEVGold),
@@ -97,16 +96,10 @@ function GoldMap.GatherEvaluator:EvaluateNode(nodeID, node)
     return cached.value
   end
 
-  local minDropRate = tonumber(filters.gatherMinDropRate)
-  if minDropRate == nil then
-    minDropRate = tonumber(filters.minDropRate) or 0
-  end
+  local minDropRate = tonumber(filters.minDropRate) or 0
   minDropRate = math.max(0, math.min(100, minDropRate))
 
-  local maxDropRate = tonumber(filters.gatherMaxDropRate)
-  if maxDropRate == nil then
-    maxDropRate = tonumber(filters.maxDropRate) or 100
-  end
+  local maxDropRate = tonumber(filters.maxDropRate) or 100
   maxDropRate = math.max(minDropRate, math.min(100, maxDropRate))
 
   local minEVGold = tonumber(filters.gatherMinEVGold)

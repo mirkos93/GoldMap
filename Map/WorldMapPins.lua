@@ -403,8 +403,8 @@ function GoldMap.WorldMapPins:RefreshNow()
   local gatherSpawns = GoldMapData and GoldMapData.GatherSpawns and GoldMapData.GatherSpawns[zoneKey]
   local gatherNodes = GoldMapData and GoldMapData.GatherNodes
   local filters = GoldMap.GetFilters and GoldMap:GetFilters() or {}
-  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or (filters.showGatherTargets ~= false)
-  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or (filters.showGatherTargets ~= false)
+  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or true
+  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or true
 
   local hasMobSource = (filters.showMobTargets ~= false) and mobSpawns and mobSeed and #mobSpawns > 0
   local hasGatherSource = (allowHerb or allowOre) and gatherSpawns and gatherNodes and #gatherSpawns > 0

@@ -27,27 +27,23 @@ if type(GoldMap.GatherEvaluator.EvaluateNodeByID) ~= "function" then
 end
 
 GoldMap.addonName = addonName
-GoldMap.version = "0.1.3-beta"
+GoldMap.version = "0.1.4-beta"
 
 GoldMapData = GoldMapData or {}
 
 GoldMap.defaults = {
   filters = {
     showMobTargets = true,
-    showGatherTargets = true,
     showHerbTargets = true,
     showOreTargets = true,
     minDropRate = 0,
     maxDropRate = 100,
-    gatherMinDropRate = 0,
-    gatherMaxDropRate = 100,
     minMobLevel = 1,
     maxMobLevel = 63,
     hideRareMobs = false,
     difficultyScope = "ANY",
     minDifficultyTier = 1,
     maxDifficultyTier = 5,
-    onlyKillableForPlayer = true,
     filterMode = "ALL",
     minEVGold = 0,
     maxEVGold = 999999,
@@ -68,7 +64,6 @@ GoldMap.defaults = {
     showMinimapPins = true,
     hideMinimapButton = false,
     showItemTooltipMarket = true,
-    filterSimpleMode = true,
     maxTooltipItems = 6,
     maxVisiblePins = 2500,
     minimapMaxPins = 80,
@@ -82,7 +77,6 @@ GoldMap.defaults = {
     minimapOrePinSpacing = 14,
   },
   scanner = {
-    useAuctionatorData = true,
     auctionatorMaxAgeDays = 7,
     staleSeconds = 6 * 60 * 60,
     scanAdvisorEnabled = true,
@@ -174,15 +168,11 @@ function GoldMap:InitializeSavedVariables()
     end
   end
 
-  -- This addon always filters to attackable farm targets.
-  -- Keep the setting hard-locked for stability and UX simplicity.
   if self.db and self.db.filters then
-    self.db.filters.onlyKillableForPlayer = true
     self.db.filters.hideRareMobs = self.db.filters.hideRareMobs == true
   end
 
   if self.db and self.db.scanner then
-    self.db.scanner.useAuctionatorData = true
     self.db.scanner.auctionatorMaxAgeDays = math.max(0, math.min(14, math.floor(tonumber(self.db.scanner.auctionatorMaxAgeDays) or 7)))
     self.db.scanner.scanAdvisorEnabled = self.db.scanner.scanAdvisorEnabled ~= false
     self.db.scanner.advisorIntervalMinutes = math.max(2, math.min(60, math.floor(tonumber(self.db.scanner.advisorIntervalMinutes) or 10)))
@@ -196,7 +186,12 @@ function GoldMap:InitializeSavedVariables()
   end
 
   if self.db and self.db.filters and self.db.meta and not self.db.meta.gatherSplitMigrated then
-    local gatherEnabled = self.db.filters.showGatherTargets ~= false
+    local gatherEnabled = self.db.filters.showGatherTargets
+    if gatherEnabled == nil then
+      gatherEnabled = true
+    else
+      gatherEnabled = gatherEnabled ~= false
+    end
     if not hadHerbTargets then
       self.db.filters.showHerbTargets = gatherEnabled
     end
@@ -204,6 +199,20 @@ function GoldMap:InitializeSavedVariables()
       self.db.filters.showOreTargets = gatherEnabled
     end
     self.db.meta.gatherSplitMigrated = true
+  end
+
+  -- Cleanup deprecated keys after migration.
+  if self.db and self.db.filters then
+    self.db.filters.onlyKillableForPlayer = nil
+    self.db.filters.showGatherTargets = nil
+    self.db.filters.gatherMinDropRate = nil
+    self.db.filters.gatherMaxDropRate = nil
+  end
+  if self.db and self.db.ui then
+    self.db.ui.filterSimpleMode = nil
+  end
+  if self.db and self.db.scanner then
+    self.db.scanner.useAuctionatorData = nil
   end
 
   self:SetLuaDebugEnabled(self.db.debug.luaErrors)
@@ -215,15 +224,14 @@ end
 
 function GoldMap:IsGatherProfessionEnabled(profession, filters)
   filters = filters or self:GetFilters()
-  local gatherEnabled = filters.showGatherTargets ~= false
   local herbEnabled = filters.showHerbTargets
   local oreEnabled = filters.showOreTargets
 
   if herbEnabled == nil then
-    herbEnabled = gatherEnabled
+    herbEnabled = true
   end
   if oreEnabled == nil then
-    oreEnabled = gatherEnabled
+    oreEnabled = true
   end
 
   if profession == "HERBALISM" then
@@ -281,17 +289,24 @@ end
 
 function GoldMap:SetFilter(key, value)
   local filters = self:GetFilters()
-  if key == "onlyKillableForPlayer" then
-    value = true
-  end
   if key == "showGatherTargets" then
     local enabled = value ~= false
     filters.showHerbTargets = enabled
     filters.showOreTargets = enabled
+    self:NotifyFiltersChanged()
+    return
+  end
+  if key == "onlyKillableForPlayer" then
+    -- Deprecated: attackable filtering is always enforced internally.
+    return
   elseif key == "showHerbTargets" then
-    filters.showGatherTargets = (value ~= false) or (filters.showOreTargets ~= false)
+    filters.showHerbTargets = value ~= false
+    self:NotifyFiltersChanged()
+    return
   elseif key == "showOreTargets" then
-    filters.showGatherTargets = (filters.showHerbTargets ~= false) or (value ~= false)
+    filters.showOreTargets = value ~= false
+    self:NotifyFiltersChanged()
+    return
   end
   filters[key] = value
   self:NotifyFiltersChanged()

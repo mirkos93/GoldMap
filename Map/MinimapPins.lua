@@ -627,8 +627,8 @@ function GoldMap.MinimapPins:RefreshNow()
   local gatherEvaluator = GoldMap.GetGatherEvaluator and GoldMap:GetGatherEvaluator() or nil
   local filters = GoldMap.GetFilters and GoldMap:GetFilters() or {}
   local allowMob = filters.showMobTargets ~= false
-  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or (filters.showGatherTargets ~= false)
-  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or (filters.showGatherTargets ~= false)
+  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or true
+  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or true
   local allowGather = allowHerb or allowOre
   if not evaluator and not gatherEvaluator then
     self:ReleaseAllPins()
