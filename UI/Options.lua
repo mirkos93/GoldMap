@@ -232,6 +232,7 @@ function GoldMap.Options:Init()
     { key = "general", label = "General" },
     { key = "visibility", label = "Visibility" },
     { key = "map", label = "Map & Minimap" },
+    { key = "graphics", label = "Graphics" },
     { key = "tooltip", label = "Tooltip" },
     { key = "scan", label = "Market Data" },
     { key = "help", label = "Help & Reset" },
@@ -271,6 +272,7 @@ function GoldMap.Options:Init()
   local general = sections.general.content
   local visibility = sections.visibility.content
   local mapSection = sections.map.content
+  local graphicsSection = sections.graphics.content
   local tooltipSection = sections.tooltip.content
   local scanSection = sections.scan.content
   local helpSection = sections.help.content
@@ -403,6 +405,73 @@ function GoldMap.Options:Init()
   local mapBottom = minimapSizeSlider:GetBottom() or 0
   local mapTop = mapSection:GetTop() or 0
   mapSection:SetHeight(math.max(720, mapTop - mapBottom + 80))
+
+  local graphicsTitle = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  graphicsTitle:SetPoint("TOPLEFT", 8, -8)
+  graphicsTitle:SetText("Graphics")
+
+  local graphicsDesc = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  graphicsDesc:SetPoint("TOPLEFT", graphicsTitle, "BOTTOMLEFT", 0, -8)
+  graphicsDesc:SetWidth(520)
+  graphicsDesc:SetJustifyH("LEFT")
+  graphicsDesc:SetText("Tune map readability by reducing pin density per target type.")
+
+  local worldHerbSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  worldHerbSpaceLabel:SetPoint("TOPLEFT", graphicsDesc, "BOTTOMLEFT", 0, -16)
+  worldHerbSpaceLabel:SetText("World map herb pin spacing (px):")
+  local worldHerbSpaceInput = MakeEditBox(graphicsSection, 64)
+  worldHerbSpaceInput:SetPoint("LEFT", worldHerbSpaceLabel, "RIGHT", 10, 0)
+  local worldHerbSpaceSlider = MakeSlider(graphicsSection, "GoldMapWorldHerbSpacingSlider", 8, 64, 1, 280)
+  worldHerbSpaceSlider:SetPoint("TOPLEFT", worldHerbSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local worldOreSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  worldOreSpaceLabel:SetPoint("TOPLEFT", worldHerbSpaceSlider, "BOTTOMLEFT", 8, -36)
+  worldOreSpaceLabel:SetText("World map ore pin spacing (px):")
+  local worldOreSpaceInput = MakeEditBox(graphicsSection, 64)
+  worldOreSpaceInput:SetPoint("LEFT", worldOreSpaceLabel, "RIGHT", 10, 0)
+  local worldOreSpaceSlider = MakeSlider(graphicsSection, "GoldMapWorldOreSpacingSlider", 8, 64, 1, 280)
+  worldOreSpaceSlider:SetPoint("TOPLEFT", worldOreSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local worldMobSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  worldMobSpaceLabel:SetPoint("TOPLEFT", worldOreSpaceSlider, "BOTTOMLEFT", 8, -36)
+  worldMobSpaceLabel:SetText("World map mob pin spacing (px):")
+  local worldMobSpaceInput = MakeEditBox(graphicsSection, 64)
+  worldMobSpaceInput:SetPoint("LEFT", worldMobSpaceLabel, "RIGHT", 10, 0)
+  local worldMobSpaceSlider = MakeSlider(graphicsSection, "GoldMapWorldMobSpacingSlider", 8, 64, 1, 280)
+  worldMobSpaceSlider:SetPoint("TOPLEFT", worldMobSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local miniHerbSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  miniHerbSpaceLabel:SetPoint("TOPLEFT", worldMobSpaceSlider, "BOTTOMLEFT", 8, -36)
+  miniHerbSpaceLabel:SetText("Minimap herb pin spacing (px):")
+  local miniHerbSpaceInput = MakeEditBox(graphicsSection, 64)
+  miniHerbSpaceInput:SetPoint("LEFT", miniHerbSpaceLabel, "RIGHT", 10, 0)
+  local miniHerbSpaceSlider = MakeSlider(graphicsSection, "GoldMapMiniHerbSpacingSlider", 6, 40, 1, 280)
+  miniHerbSpaceSlider:SetPoint("TOPLEFT", miniHerbSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local miniOreSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  miniOreSpaceLabel:SetPoint("TOPLEFT", miniHerbSpaceSlider, "BOTTOMLEFT", 8, -36)
+  miniOreSpaceLabel:SetText("Minimap ore pin spacing (px):")
+  local miniOreSpaceInput = MakeEditBox(graphicsSection, 64)
+  miniOreSpaceInput:SetPoint("LEFT", miniOreSpaceLabel, "RIGHT", 10, 0)
+  local miniOreSpaceSlider = MakeSlider(graphicsSection, "GoldMapMiniOreSpacingSlider", 6, 40, 1, 280)
+  miniOreSpaceSlider:SetPoint("TOPLEFT", miniOreSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local miniMobSpaceLabel = graphicsSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  miniMobSpaceLabel:SetPoint("TOPLEFT", miniOreSpaceSlider, "BOTTOMLEFT", 8, -36)
+  miniMobSpaceLabel:SetText("Minimap mob pin spacing (px):")
+  local miniMobSpaceInput = MakeEditBox(graphicsSection, 64)
+  miniMobSpaceInput:SetPoint("LEFT", miniMobSpaceLabel, "RIGHT", 10, 0)
+  local miniMobSpaceSlider = MakeSlider(graphicsSection, "GoldMapMiniMobSpacingSlider", 6, 40, 1, 280)
+  miniMobSpaceSlider:SetPoint("TOPLEFT", miniMobSpaceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local resetGraphicsButton = CreateFrame("Button", nil, graphicsSection, "UIPanelButtonTemplate")
+  resetGraphicsButton:SetSize(240, 24)
+  resetGraphicsButton:SetPoint("TOPLEFT", miniMobSpaceSlider, "BOTTOMLEFT", 8, -28)
+  resetGraphicsButton:SetText("Reset Graphics to Defaults")
+
+  local graphicsBottom = resetGraphicsButton:GetBottom() or 0
+  local graphicsTop = graphicsSection:GetTop() or 0
+  graphicsSection:SetHeight(math.max(940, graphicsTop - graphicsBottom + 64))
 
   local tooltipTitle = tooltipSection:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   tooltipTitle:SetPoint("TOPLEFT", 8, -8)
@@ -573,6 +642,12 @@ function GoldMap.Options:Init()
     minimapRangeInput:SetNumber((GoldMap.db.ui.minimapRange or GoldMap.defaults.ui.minimapRange) * 100)
     minimapSizeInput:SetNumber(GoldMap.db.ui.minimapIconSize)
     maxTooltipInput:SetNumber(GoldMap.db.ui.maxTooltipItems)
+    worldHerbSpaceInput:SetNumber(GoldMap.db.ui.worldHerbPinSpacing or GoldMap.defaults.ui.worldHerbPinSpacing or 28)
+    worldOreSpaceInput:SetNumber(GoldMap.db.ui.worldOrePinSpacing or GoldMap.defaults.ui.worldOrePinSpacing or 22)
+    worldMobSpaceInput:SetNumber(GoldMap.db.ui.worldMobPinSpacing or GoldMap.defaults.ui.worldMobPinSpacing or 16)
+    miniHerbSpaceInput:SetNumber(GoldMap.db.ui.minimapHerbPinSpacing or GoldMap.defaults.ui.minimapHerbPinSpacing or 18)
+    miniOreSpaceInput:SetNumber(GoldMap.db.ui.minimapOrePinSpacing or GoldMap.defaults.ui.minimapOrePinSpacing or 14)
+    miniMobSpaceInput:SetNumber(GoldMap.db.ui.minimapMobPinSpacing or GoldMap.defaults.ui.minimapMobPinSpacing or 12)
     queryDelayInput:SetText(tostring(math.floor((GoldMap.db.scanner.auctionatorMaxAgeDays or GoldMap.defaults.scanner.auctionatorMaxAgeDays or 7) + 0.5)))
 
     maxPinsSlider:SetValue(GoldMap.db.ui.maxVisiblePins)
@@ -580,6 +655,12 @@ function GoldMap.Options:Init()
     minimapRangeSlider:SetValue((GoldMap.db.ui.minimapRange or GoldMap.defaults.ui.minimapRange) * 100)
     minimapSizeSlider:SetValue(GoldMap.db.ui.minimapIconSize)
     maxTooltipSlider:SetValue(GoldMap.db.ui.maxTooltipItems)
+    worldHerbSpaceSlider:SetValue(GoldMap.db.ui.worldHerbPinSpacing or GoldMap.defaults.ui.worldHerbPinSpacing or 28)
+    worldOreSpaceSlider:SetValue(GoldMap.db.ui.worldOrePinSpacing or GoldMap.defaults.ui.worldOrePinSpacing or 22)
+    worldMobSpaceSlider:SetValue(GoldMap.db.ui.worldMobPinSpacing or GoldMap.defaults.ui.worldMobPinSpacing or 16)
+    miniHerbSpaceSlider:SetValue(GoldMap.db.ui.minimapHerbPinSpacing or GoldMap.defaults.ui.minimapHerbPinSpacing or 18)
+    miniOreSpaceSlider:SetValue(GoldMap.db.ui.minimapOrePinSpacing or GoldMap.defaults.ui.minimapOrePinSpacing or 14)
+    miniMobSpaceSlider:SetValue(GoldMap.db.ui.minimapMobPinSpacing or GoldMap.defaults.ui.minimapMobPinSpacing or 12)
     queryDelaySlider:SetValue(GoldMap.db.scanner.auctionatorMaxAgeDays or GoldMap.defaults.scanner.auctionatorMaxAgeDays or 7)
 
     RefreshMarketStatus()
@@ -592,6 +673,12 @@ function GoldMap.Options:Init()
     SetSliderLabels("GoldMapMiniPinsSlider", "Minimap Pin Limit", "10", "300")
     SetSliderLabels("GoldMapMiniRangeSlider", "Minimap Range", "0.5%", "20%")
     SetSliderLabels("GoldMapMiniSizeSlider", "Minimap Icon Size", "8", "22")
+    SetSliderLabels("GoldMapWorldHerbSpacingSlider", "World Herb Spacing", "8", "64")
+    SetSliderLabels("GoldMapWorldOreSpacingSlider", "World Ore Spacing", "8", "64")
+    SetSliderLabels("GoldMapWorldMobSpacingSlider", "World Mob Spacing", "8", "64")
+    SetSliderLabels("GoldMapMiniHerbSpacingSlider", "Minimap Herb Spacing", "6", "40")
+    SetSliderLabels("GoldMapMiniOreSpacingSlider", "Minimap Ore Spacing", "6", "40")
+    SetSliderLabels("GoldMapMiniMobSpacingSlider", "Minimap Mob Spacing", "6", "40")
     SetSliderLabels("GoldMapTooltipLinesSlider", "Max Tooltip Drops", "1", "20")
     SetSliderLabels("GoldMapQueryDelaySlider", "Auctionator Max Age (days)", "0", "14")
   end
@@ -683,6 +770,60 @@ function GoldMap.Options:Init()
     GoldMap:NotifyFiltersChanged()
   end)
 
+  worldHerbSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.worldHerbPinSpacing or 28)
+    value = Clamp(math.floor(value + 0.5), 8, 64)
+    GoldMap.db.ui.worldHerbPinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  worldOreSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.worldOrePinSpacing or 22)
+    value = Clamp(math.floor(value + 0.5), 8, 64)
+    GoldMap.db.ui.worldOrePinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  worldMobSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.worldMobPinSpacing or 16)
+    value = Clamp(math.floor(value + 0.5), 8, 64)
+    GoldMap.db.ui.worldMobPinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniHerbSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.minimapHerbPinSpacing or 18)
+    value = Clamp(math.floor(value + 0.5), 6, 40)
+    GoldMap.db.ui.minimapHerbPinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniOreSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.minimapOrePinSpacing or 14)
+    value = Clamp(math.floor(value + 0.5), 6, 40)
+    GoldMap.db.ui.minimapOrePinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniMobSpaceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.minimapMobPinSpacing or 12)
+    value = Clamp(math.floor(value + 0.5), 6, 40)
+    GoldMap.db.ui.minimapMobPinSpacing = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
   queryDelayInput:SetScript("OnEnterPressed", function(selfBox)
     local days = tonumber(selfBox:GetText()) or (GoldMap.defaults.scanner.auctionatorMaxAgeDays or 7)
     days = Clamp(math.floor(days + 0.5), 0, 14)
@@ -736,6 +877,60 @@ function GoldMap.Options:Init()
     GoldMap:NotifyFiltersChanged()
   end)
 
+  worldHerbSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.worldHerbPinSpacing = Clamp(math.floor(value + 0.5), 8, 64)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  worldOreSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.worldOrePinSpacing = Clamp(math.floor(value + 0.5), 8, 64)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  worldMobSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.worldMobPinSpacing = Clamp(math.floor(value + 0.5), 8, 64)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniHerbSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.minimapHerbPinSpacing = Clamp(math.floor(value + 0.5), 6, 40)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniOreSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.minimapOrePinSpacing = Clamp(math.floor(value + 0.5), 6, 40)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  miniMobSpaceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.minimapMobPinSpacing = Clamp(math.floor(value + 0.5), 6, 40)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
   queryDelaySlider:SetScript("OnValueChanged", function(_, value)
     if syncingControls then
       return
@@ -750,6 +945,43 @@ function GoldMap.Options:Init()
       C_Timer.After(0.15, RefreshMarketStatus)
     else
       GoldMap:Printf("Scanner module unavailable.")
+    end
+  end)
+
+  local function ResetGraphicsDefaults()
+    local defaults = GoldMap.defaults and GoldMap.defaults.ui or {}
+    GoldMap.db.ui.worldMobPinSpacing = defaults.worldMobPinSpacing
+    GoldMap.db.ui.worldHerbPinSpacing = defaults.worldHerbPinSpacing
+    GoldMap.db.ui.worldOrePinSpacing = defaults.worldOrePinSpacing
+    GoldMap.db.ui.minimapMobPinSpacing = defaults.minimapMobPinSpacing
+    GoldMap.db.ui.minimapHerbPinSpacing = defaults.minimapHerbPinSpacing
+    GoldMap.db.ui.minimapOrePinSpacing = defaults.minimapOrePinSpacing
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+    GoldMap:Printf("Graphics settings reset to defaults.")
+  end
+
+  local popupKey = "GOLDMAP_RESET_GRAPHICS_CONFIRM"
+  if type(StaticPopupDialogs) == "table" then
+    StaticPopupDialogs[popupKey] = StaticPopupDialogs[popupKey] or {
+      text = "Reset all Graphics settings to defaults?",
+      button1 = YES,
+      button2 = NO,
+      OnAccept = function()
+        ResetGraphicsDefaults()
+      end,
+      timeout = 0,
+      whileDead = true,
+      hideOnEscape = true,
+      preferredIndex = 3,
+    }
+  end
+
+  resetGraphicsButton:SetScript("OnClick", function()
+    if StaticPopup_Show and type(StaticPopupDialogs) == "table" then
+      StaticPopup_Show(popupKey)
+    else
+      ResetGraphicsDefaults()
     end
   end)
 

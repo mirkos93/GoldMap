@@ -14,6 +14,8 @@ local TAB_DEFS = {
 local PRESET_FILTER_KEYS = {
   "showMobTargets",
   "showGatherTargets",
+  "showHerbTargets",
+  "showOreTargets",
   "minDropRate",
   "maxDropRate",
   "minEVGold",
@@ -299,6 +301,14 @@ function GoldMap.FilterPanel:ApplyPresetData(data)
       filters[key] = data[key]
     end
   end
+  local gatherEnabled = filters.showGatherTargets ~= false
+  if data.showHerbTargets == nil then
+    filters.showHerbTargets = gatherEnabled
+  end
+  if data.showOreTargets == nil then
+    filters.showOreTargets = gatherEnabled
+  end
+  filters.showGatherTargets = (filters.showHerbTargets ~= false) or (filters.showOreTargets ~= false)
   filters.onlyKillableForPlayer = true
 
   self.hasPendingInputChanges = false
@@ -515,6 +525,15 @@ end
 function GoldMap.FilterPanel:SyncInputsFromDB()
   local filters = GoldMap.db.filters
   filters.onlyKillableForPlayer = true
+  local gatherEnabled = filters.showGatherTargets ~= false
+  local showHerbTargets = filters.showHerbTargets
+  local showOreTargets = filters.showOreTargets
+  if showHerbTargets == nil then
+    showHerbTargets = gatherEnabled
+  end
+  if showOreTargets == nil then
+    showOreTargets = gatherEnabled
+  end
 
   self.inputs.minDrop:SetText(string.format("%.2f", filters.minDropRate))
   self.inputs.maxDrop:SetText(string.format("%.2f", filters.maxDropRate))
@@ -532,8 +551,11 @@ function GoldMap.FilterPanel:SyncInputsFromDB()
   if self.inputs.showMobTargets then
     self.inputs.showMobTargets:SetChecked(filters.showMobTargets ~= false)
   end
-  if self.inputs.showGatherTargets then
-    self.inputs.showGatherTargets:SetChecked(filters.showGatherTargets ~= false)
+  if self.inputs.showHerbTargets then
+    self.inputs.showHerbTargets:SetChecked(showHerbTargets ~= false)
+  end
+  if self.inputs.showOreTargets then
+    self.inputs.showOreTargets:SetChecked(showOreTargets ~= false)
   end
   if self.inputs.showNoPrice then
     self.inputs.showNoPrice:SetChecked(filters.showNoPricePins)
@@ -567,6 +589,8 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
   f.onlyKillableForPlayer = true
   f.showMobTargets = true
   f.showGatherTargets = true
+  f.showHerbTargets = true
+  f.showOreTargets = true
 
   if presetKey == "FAST" then
     f.minDropRate = 1
@@ -759,13 +783,24 @@ function GoldMap.FilterPanel:BuildQuickPage(page)
   self.inputs.showMobTargets = showMobTargets
   page.state.y = page.state.y - 30
 
-  local showGatherTargets = MakeCheckbox(page.content, "Include gathering targets (Herbs/Ore)")
-  showGatherTargets:SetPoint("TOPLEFT", 10, page.state.y + 6)
-  showGatherTargets:SetScript("OnClick", function(selfButton)
-    GoldMap.db.filters.showGatherTargets = selfButton:GetChecked() and true or false
+  local showHerbTargets = MakeCheckbox(page.content, "Include herbalism nodes")
+  showHerbTargets:SetPoint("TOPLEFT", 10, page.state.y + 6)
+  showHerbTargets:SetScript("OnClick", function(selfButton)
+    GoldMap.db.filters.showHerbTargets = selfButton:GetChecked() and true or false
+    GoldMap.db.filters.showGatherTargets = (GoldMap.db.filters.showHerbTargets ~= false) or (GoldMap.db.filters.showOreTargets ~= false)
     GoldMap:NotifyFiltersChanged()
   end)
-  self.inputs.showGatherTargets = showGatherTargets
+  self.inputs.showHerbTargets = showHerbTargets
+  page.state.y = page.state.y - 30
+
+  local showOreTargets = MakeCheckbox(page.content, "Include mining nodes")
+  showOreTargets:SetPoint("TOPLEFT", 10, page.state.y + 6)
+  showOreTargets:SetScript("OnClick", function(selfButton)
+    GoldMap.db.filters.showOreTargets = selfButton:GetChecked() and true or false
+    GoldMap.db.filters.showGatherTargets = (GoldMap.db.filters.showHerbTargets ~= false) or (GoldMap.db.filters.showOreTargets ~= false)
+    GoldMap:NotifyFiltersChanged()
+  end)
+  self.inputs.showOreTargets = showOreTargets
   page.state.y = page.state.y - 30
 
   AddHint(page.content, page.state, "Quick tab keeps the most used filters in one place. Data reliability and selling speed are color-coded summaries from local Auctionator history.")
@@ -1062,7 +1097,7 @@ function GoldMap.FilterPanel:Init()
 
   local contentHost = CreateFrame("Frame", nil, frame)
   contentHost:SetPoint("TOPLEFT", 14, -88)
-  contentHost:SetPoint("BOTTOMRIGHT", -14, 48)
+  contentHost:SetPoint("BOTTOMRIGHT", -14, 44)
 
   local contentBg = contentHost:CreateTexture(nil, "BACKGROUND")
   contentBg:SetAllPoints(contentHost)
@@ -1095,17 +1130,9 @@ function GoldMap.FilterPanel:Init()
   self:BuildAdvancedPage(self.pages.advanced)
   self:BuildPresetsPage(self.pages.presets)
 
-  local applyButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  applyButton:SetSize(120, 24)
-  applyButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 14)
-  applyButton:SetText("Apply")
-  applyButton:SetScript("OnClick", function()
-    self:ApplyInputs()
-  end)
-
   local resetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   resetButton:SetSize(120, 24)
-  resetButton:SetPoint("RIGHT", applyButton, "LEFT", -8, 0)
+  resetButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 14)
   resetButton:SetText("Reset")
   resetButton:SetScript("OnClick", function()
     local defaults = GoldMap.defaults and GoldMap.defaults.filters or {}

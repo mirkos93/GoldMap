@@ -98,6 +98,19 @@ local function GetIconForPayload(payload)
   return GoldMap:GetIconPath("pinBase", 64)
 end
 
+local function GetCandidateMinimapSpacingPx(candidate)
+  local ui = GoldMap.db and GoldMap.db.ui or {}
+  if candidate and candidate.kind == "GATHER" then
+    local profession = candidate.node and candidate.node.profession
+    if profession == "HERBALISM" then
+      return math.max(6, math.min(40, ui.minimapHerbPinSpacing or 18))
+    elseif profession == "MINING" then
+      return math.max(6, math.min(40, ui.minimapOrePinSpacing or 14))
+    end
+  end
+  return math.max(6, math.min(40, ui.minimapMobPinSpacing or 12))
+end
+
 local function MakePin(parent)
   local button = CreateFrame("Button", nil, parent)
   button:SetSize(14, 14)
@@ -329,7 +342,9 @@ function GoldMap.MinimapPins:RefreshNow()
   local gatherEvaluator = GoldMap.GetGatherEvaluator and GoldMap:GetGatherEvaluator() or nil
   local filters = GoldMap.GetFilters and GoldMap:GetFilters() or {}
   local allowMob = filters.showMobTargets ~= false
-  local allowGather = filters.showGatherTargets ~= false
+  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or (filters.showGatherTargets ~= false)
+  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or (filters.showGatherTargets ~= false)
+  local allowGather = allowHerb or allowOre
   if not evaluator and not gatherEvaluator then
     self:ReleaseAllPins()
     return
@@ -392,7 +407,7 @@ function GoldMap.MinimapPins:RefreshNow()
                   dy = dy,
                 })
               end
-            elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID] then
+            elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID] and GoldMap:IsGatherProfessionEnabled(gatherNodes[spawn.nodeID].profession, filters) then
               local eval = evalByNode[spawn.nodeID]
               if eval == nil then
                 eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)
@@ -431,6 +446,7 @@ function GoldMap.MinimapPins:RefreshNow()
   local sinFacing = math.sin(facing)
   local cosFacing = math.cos(facing)
   local placedCandidates = {}
+  local occupiedCells = {}
   local mobVisible = {}
   local gatherVisible = {}
   local gatherHerbVisible = {}
@@ -485,6 +501,16 @@ function GoldMap.MinimapPins:RefreshNow()
       px = px * clampScale
       py = py * clampScale
     end
+
+    local spacingPx = GetCandidateMinimapSpacingPx(candidate)
+    local cellX = math.floor(px / spacingPx)
+    local cellY = math.floor(py / spacingPx)
+    local profession = candidate.node and candidate.node.profession or ""
+    local cellKey = tostring(candidate.kind or "GEN") .. ":" .. tostring(profession) .. ":" .. cellX .. ":" .. cellY
+    if occupiedCells[cellKey] then
+      return false
+    end
+    occupiedCells[cellKey] = true
 
     local pin = self:AcquirePin()
     pin:SetSize(iconSize, iconSize)

@@ -27,7 +27,7 @@ if type(GoldMap.GatherEvaluator.EvaluateNodeByID) ~= "function" then
 end
 
 GoldMap.addonName = addonName
-GoldMap.version = "0.1.0"
+GoldMap.version = "0.1.1-beta"
 
 GoldMapData = GoldMapData or {}
 
@@ -35,6 +35,8 @@ GoldMap.defaults = {
   filters = {
     showMobTargets = true,
     showGatherTargets = true,
+    showHerbTargets = true,
+    showOreTargets = true,
     minDropRate = 0,
     maxDropRate = 100,
     gatherMinDropRate = 0,
@@ -67,6 +69,12 @@ GoldMap.defaults = {
     minimapMaxPins = 80,
     minimapRange = 0.035,
     minimapIconSize = 14,
+    worldMobPinSpacing = 16,
+    worldHerbPinSpacing = 28,
+    worldOrePinSpacing = 22,
+    minimapMobPinSpacing = 12,
+    minimapHerbPinSpacing = 18,
+    minimapOrePinSpacing = 14,
   },
   scanner = {
     useAuctionatorData = true,
@@ -126,6 +134,9 @@ local function CopyDefaults(target, defaults)
 end
 
 function GoldMap:InitializeSavedVariables()
+  local hadHerbTargets = GoldMapDB and GoldMapDB.filters and GoldMapDB.filters.showHerbTargets ~= nil
+  local hadOreTargets = GoldMapDB and GoldMapDB.filters and GoldMapDB.filters.showOreTargets ~= nil
+
   GoldMapDB = GoldMapDB or {}
   CopyDefaults(GoldMapDB, self.defaults)
   self.db = GoldMapDB
@@ -159,11 +170,45 @@ function GoldMap:InitializeSavedVariables()
     self.db.scanner.useAuctionatorData = true
   end
 
+  if self.db and self.db.filters and self.db.meta and not self.db.meta.gatherSplitMigrated then
+    local gatherEnabled = self.db.filters.showGatherTargets ~= false
+    if not hadHerbTargets then
+      self.db.filters.showHerbTargets = gatherEnabled
+    end
+    if not hadOreTargets then
+      self.db.filters.showOreTargets = gatherEnabled
+    end
+    self.db.meta.gatherSplitMigrated = true
+  end
+
   self:SetLuaDebugEnabled(self.db.debug.luaErrors)
 end
 
 function GoldMap:GetFilters()
   return self.db and self.db.filters or self.defaults.filters
+end
+
+function GoldMap:IsGatherProfessionEnabled(profession, filters)
+  filters = filters or self:GetFilters()
+  local gatherEnabled = filters.showGatherTargets ~= false
+  local herbEnabled = filters.showHerbTargets
+  local oreEnabled = filters.showOreTargets
+
+  if herbEnabled == nil then
+    herbEnabled = gatherEnabled
+  end
+  if oreEnabled == nil then
+    oreEnabled = gatherEnabled
+  end
+
+  if profession == "HERBALISM" then
+    return herbEnabled ~= false
+  end
+  if profession == "MINING" then
+    return oreEnabled ~= false
+  end
+
+  return (herbEnabled ~= false) or (oreEnabled ~= false)
 end
 
 function GoldMap:GetEvaluator()
@@ -213,6 +258,15 @@ function GoldMap:SetFilter(key, value)
   local filters = self:GetFilters()
   if key == "onlyKillableForPlayer" then
     value = true
+  end
+  if key == "showGatherTargets" then
+    local enabled = value ~= false
+    filters.showHerbTargets = enabled
+    filters.showOreTargets = enabled
+  elseif key == "showHerbTargets" then
+    filters.showGatherTargets = (value ~= false) or (filters.showOreTargets ~= false)
+  elseif key == "showOreTargets" then
+    filters.showGatherTargets = (filters.showHerbTargets ~= false) or (value ~= false)
   end
   filters[key] = value
   self:NotifyFiltersChanged()

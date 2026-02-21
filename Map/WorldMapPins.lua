@@ -28,6 +28,22 @@ local function GetIconForPayload(payload)
   return GoldMap:GetIconPath("pinBase", 64)
 end
 
+local function GetCandidateBucketType(candidate)
+  if not candidate then
+    return nil
+  end
+  if candidate.kind == "MOB" then
+    return "MOB"
+  end
+  local profession = candidate.node and candidate.node.profession
+  if profession == "HERBALISM" then
+    return "HERB"
+  elseif profession == "MINING" then
+    return "ORE"
+  end
+  return "GATHER"
+end
+
 local function MakePin(parent)
   local button = CreateFrame("Button", nil, parent)
   button:SetSize(16, 16)
@@ -166,6 +182,19 @@ function GoldMap.WorldMapPins:FinalizePins()
       pin.icon:SetVertexColor(1, 1, 1, 1)
     end
   end
+end
+
+function GoldMap.WorldMapPins:GetCandidatePinSpacingPx(candidate)
+  local ui = GoldMap.db and GoldMap.db.ui or {}
+  if candidate and candidate.kind == "GATHER" then
+    local profession = candidate.node and candidate.node.profession
+    if profession == "HERBALISM" then
+      return math.max(8, math.min(64, ui.worldHerbPinSpacing or 28))
+    elseif profession == "MINING" then
+      return math.max(8, math.min(64, ui.worldOrePinSpacing or 22))
+    end
+  end
+  return math.max(8, math.min(64, ui.worldMobPinSpacing or 16))
 end
 
 function GoldMap.WorldMapPins:ColorForEV(evCopper)
@@ -374,9 +403,11 @@ function GoldMap.WorldMapPins:RefreshNow()
   local gatherSpawns = GoldMapData and GoldMapData.GatherSpawns and GoldMapData.GatherSpawns[zoneKey]
   local gatherNodes = GoldMapData and GoldMapData.GatherNodes
   local filters = GoldMap.GetFilters and GoldMap:GetFilters() or {}
+  local allowHerb = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("HERBALISM", filters) or (filters.showGatherTargets ~= false)
+  local allowOre = GoldMap.IsGatherProfessionEnabled and GoldMap:IsGatherProfessionEnabled("MINING", filters) or (filters.showGatherTargets ~= false)
 
   local hasMobSource = (filters.showMobTargets ~= false) and mobSpawns and mobSeed and #mobSpawns > 0
-  local hasGatherSource = (filters.showGatherTargets ~= false) and gatherSpawns and gatherNodes and #gatherSpawns > 0
+  local hasGatherSource = (allowHerb or allowOre) and gatherSpawns and gatherNodes and #gatherSpawns > 0
   if not hasMobSource and not hasGatherSource then
     self:ReleaseAllPins()
     return
@@ -436,7 +467,7 @@ function GoldMap.WorldMapPins:RefreshNow()
       local px, py = self:GetProjectedPoint(spawn, currentMapID)
       if px and py and self:IsPointAllowedOnMap(currentMapID, px, py) then
         local node = gatherNodes[spawn.nodeID]
-        if node then
+        if node and GoldMap:IsGatherProfessionEnabled(node.profession, filters) then
           local eval = evalByNode[spawn.nodeID]
           if eval == nil then
             eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)
@@ -476,8 +507,6 @@ function GoldMap.WorldMapPins:RefreshNow()
     return aEV > bEV
   end)
 
-  local cellW = math.max(0.001, 16 / width)
-  local cellH = math.max(0.001, 16 / height)
   local occupied = {}
   local placedCandidates = {}
   local mobCandidates = {}
@@ -516,9 +545,13 @@ function GoldMap.WorldMapPins:RefreshNow()
       return false
     end
 
-    local cx = math.floor(candidate.px / cellW)
-    local cy = math.floor(candidate.py / cellH)
-    local key = cx .. ":" .. cy .. ":" .. candidate.kind
+    local spacingPx = self:GetCandidatePinSpacingPx(candidate)
+    local spacingW = math.max(0.001, spacingPx / width)
+    local spacingH = math.max(0.001, spacingPx / height)
+    local cx = math.floor(candidate.px / spacingW)
+    local cy = math.floor(candidate.py / spacingH)
+    local bucketType = GetCandidateBucketType(candidate) or candidate.kind or "GEN"
+    local key = bucketType .. ":" .. cx .. ":" .. cy
     if occupied[key] then
       return false
     end

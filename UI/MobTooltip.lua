@@ -17,24 +17,24 @@ function GoldMap.MobTooltip:Init()
   end)
 
   GoldMap:RegisterMessage("FILTERS_CHANGED", function()
-    self:RefreshUnitTooltip()
+    self:InvalidateCurrentTooltip()
   end)
 
   self.initialized = true
 end
 
 function GoldMap.MobTooltip:RefreshUnitTooltip()
-  if not GameTooltip or not GameTooltip:IsShown() then
+  self:InvalidateCurrentTooltip()
+end
+
+function GoldMap.MobTooltip:InvalidateCurrentTooltip()
+  if not GameTooltip then
     return
   end
-
-  local _, unit = GameTooltip:GetUnit()
-  if not unit or not UnitExists(unit) then
-    return
-  end
-
+  -- Important: do not force SetUnit()/ClearLines() here.
+  -- Rebuilding the tooltip can clobber lines added by other addons (e.g. Questie).
+  -- We only reset our marker so next natural tooltip build can re-inject GoldMap info.
   GameTooltip.goldMapGUID = nil
-  GameTooltip:SetUnit(unit)
 end
 
 function GoldMap.MobTooltip:TryInject(tooltip)

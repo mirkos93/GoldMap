@@ -6,6 +6,8 @@ GoldMap.GatherEvaluator = GoldMap.GatherEvaluator or {}
 local function BuildFilterSignature(filters)
   return table.concat({
     tostring(filters.showGatherTargets),
+    tostring(filters.showHerbTargets),
+    tostring(filters.showOreTargets),
     tostring(filters.gatherMinDropRate),
     tostring(filters.gatherMaxDropRate),
     tostring(filters.filterMode),
@@ -78,7 +80,7 @@ end
 
 function GoldMap.GatherEvaluator:EvaluateNode(nodeID, node)
   local filters = GoldMap:GetFilters()
-  if filters.showGatherTargets == false then
+  if not GoldMap:IsGatherProfessionEnabled(node.profession, filters) then
     self.cache[nodeID] = {
       revision = GoldMap.AHCache:GetRevision(),
       filterSig = BuildFilterSignature(filters),
