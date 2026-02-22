@@ -27,7 +27,7 @@ if type(GoldMap.GatherEvaluator.EvaluateNodeByID) ~= "function" then
 end
 
 GoldMap.addonName = addonName
-GoldMap.version = "0.1.5-beta"
+GoldMap.version = "0.1.6-beta"
 
 GoldMapData = GoldMapData or {}
 
@@ -57,6 +57,7 @@ GoldMap.defaults = {
     gatherMinSellSpeedTier = 0,
     minQuality = 1,
     gatherMinQuality = 1,
+    hideUnskilledGatherNodes = false,
     showNoPricePins = true,
   },
   ui = {
@@ -69,6 +70,8 @@ GoldMap.defaults = {
     minimapMaxPins = 80,
     minimapRange = 0.035,
     minimapIconSize = 14,
+    minimapTrackingCircleEnabled = true,
+    minimapTrackingCircleDistance = 100,
     worldMobPinSpacing = 16,
     worldHerbPinSpacing = 28,
     worldOrePinSpacing = 22,
@@ -117,6 +120,54 @@ GoldMap.media.icons = {
   qualityUncommon = "goldmap-badge-quality-uncommon.blp",
   qualityRare = "goldmap-badge-quality-rare.blp",
   qualityEpic = "goldmap-badge-quality-epic.blp",
+}
+
+local HERBALISM_SKILL_LINE_ID = 182
+local MINING_SKILL_LINE_ID = 186
+
+local HERB_REQUIRED_SKILL_BY_NAME = {
+  ["silverleaf"] = 1,
+  ["peacebloom"] = 1,
+  ["earthroot"] = 15,
+  ["mageroyal"] = 50,
+  ["briarthorn"] = 70,
+  ["stranglekelp"] = 85,
+  ["bruiseweed"] = 100,
+  ["wild steelbloom"] = 115,
+  ["grave moss"] = 120,
+  ["kingsblood"] = 125,
+  ["liferoot"] = 150,
+  ["fadeleaf"] = 160,
+  ["goldthorn"] = 170,
+  ["khadgar's whisker"] = 185,
+  ["wintersbite"] = 195,
+  ["firebloom"] = 205,
+  ["gahz'ridian"] = 205,
+  ["purple lotus"] = 210,
+  ["arthas' tears"] = 220,
+  ["sungrass"] = 230,
+  ["blindweed"] = 235,
+  ["ghost mushroom"] = 245,
+  ["gromsblood"] = 250,
+  ["golden sansam"] = 260,
+  ["dreamfoil"] = 270,
+  ["mountain silversage"] = 280,
+  ["plaguebloom"] = 285,
+  ["icecap"] = 290,
+  ["black lotus"] = 300,
+}
+
+local MINING_REQUIRED_SKILL_BY_NAME = {
+  ["copper vein"] = 1,
+  ["tin vein"] = 65,
+  ["silver vein"] = 75,
+  ["iron deposit"] = 125,
+  ["gold vein"] = 155,
+  ["mithril deposit"] = 175,
+  ["truesilver deposit"] = 230,
+  ["small thorium vein"] = 245,
+  ["rich thorium vein"] = 275,
+  ["dark iron deposit"] = 230,
 }
 
 function GoldMap:GetIconPath(iconKey, size)
@@ -170,6 +221,11 @@ function GoldMap:InitializeSavedVariables()
 
   if self.db and self.db.filters then
     self.db.filters.hideRareMobs = self.db.filters.hideRareMobs == true
+  end
+
+  if self.db and self.db.ui then
+    self.db.ui.minimapTrackingCircleEnabled = self.db.ui.minimapTrackingCircleEnabled ~= false
+    self.db.ui.minimapTrackingCircleDistance = math.max(10, math.min(300, math.floor(tonumber(self.db.ui.minimapTrackingCircleDistance) or 100)))
   end
 
   if self.db and self.db.scanner then
@@ -242,6 +298,100 @@ function GoldMap:IsGatherProfessionEnabled(profession, filters)
   end
 
   return (herbEnabled ~= false) or (oreEnabled ~= false)
+end
+
+function GoldMap:GetGatherProfessionSkill(profession)
+  self._professionSkillCache = self._professionSkillCache or {}
+  local cache = self._professionSkillCache
+  local now = GetTime and GetTime() or 0
+
+  if cache.updatedAt and (now - cache.updatedAt) <= 0.5 then
+    if profession == "HERBALISM" then
+      return cache.herbalismSkill or 0, cache.hasHerbalism == true
+    end
+    if profession == "MINING" then
+      return cache.miningSkill or 0, cache.hasMining == true
+    end
+    return 0, false
+  end
+
+  local herbalismSkill, miningSkill = 0, 0
+  local hasHerbalism, hasMining = false, false
+
+  if GetProfessions and GetProfessionInfo then
+    local primary1, primary2 = GetProfessions()
+    local slots = { primary1, primary2 }
+    for _, slot in ipairs(slots) do
+      if slot then
+        local _, _, skillLevel, _, _, _, skillLine = GetProfessionInfo(slot)
+        local normalizedSkill = math.max(0, math.floor(tonumber(skillLevel) or 0))
+        if skillLine == HERBALISM_SKILL_LINE_ID then
+          hasHerbalism = true
+          herbalismSkill = normalizedSkill
+        elseif skillLine == MINING_SKILL_LINE_ID then
+          hasMining = true
+          miningSkill = normalizedSkill
+        end
+      end
+    end
+  end
+
+  cache.updatedAt = now
+  cache.herbalismSkill = herbalismSkill
+  cache.miningSkill = miningSkill
+  cache.hasHerbalism = hasHerbalism
+  cache.hasMining = hasMining
+
+  if profession == "HERBALISM" then
+    return herbalismSkill, hasHerbalism
+  end
+  if profession == "MINING" then
+    return miningSkill, hasMining
+  end
+  return 0, false
+end
+
+function GoldMap:GetGatherNodeRequiredSkill(node)
+  if type(node) ~= "table" then
+    return nil
+  end
+
+  local explicit = tonumber(node.requiredSkill)
+  if explicit and explicit > 0 then
+    return math.floor(explicit)
+  end
+
+  local name = string.lower(tostring(node.name or ""))
+  if name == "" then
+    return nil
+  end
+
+  if node.profession == "HERBALISM" then
+    return HERB_REQUIRED_SKILL_BY_NAME[name]
+  end
+  if node.profession == "MINING" then
+    return MINING_REQUIRED_SKILL_BY_NAME[name]
+  end
+  return nil
+end
+
+function GoldMap:IsGatherNodeSkillEligible(node, filters)
+  if type(node) ~= "table" then
+    return false
+  end
+
+  filters = filters or self:GetFilters()
+  if not filters or filters.hideUnskilledGatherNodes ~= true then
+    return true
+  end
+
+  local requiredSkill = self:GetGatherNodeRequiredSkill(node)
+  if not requiredSkill or requiredSkill <= 0 then
+    return true
+  end
+
+  local currentSkill = self:GetGatherProfessionSkill(node.profession)
+  return (currentSkill or 0) >= requiredSkill
 end
 
 function GoldMap:GetEvaluator()

@@ -4,9 +4,18 @@ GoldMap = GoldMap or {}
 GoldMap.GatherEvaluator = GoldMap.GatherEvaluator or {}
 
 local function BuildFilterSignature(filters)
+  local hideUnskilled = filters.hideUnskilledGatherNodes == true
+  local herbSkill = 0
+  local miningSkill = 0
+  if hideUnskilled and GoldMap.GetGatherProfessionSkill then
+    herbSkill = GoldMap:GetGatherProfessionSkill("HERBALISM") or 0
+    miningSkill = GoldMap:GetGatherProfessionSkill("MINING") or 0
+  end
+
   return table.concat({
     tostring(filters.showHerbTargets),
     tostring(filters.showOreTargets),
+    tostring(filters.hideUnskilledGatherNodes),
     tostring(filters.minDropRate),
     tostring(filters.maxDropRate),
     tostring(filters.filterMode),
@@ -17,6 +26,8 @@ local function BuildFilterSignature(filters)
     tostring(filters.gatherMinSellSpeedTier),
     tostring(filters.gatherMinQuality),
     tostring(filters.showNoPricePins),
+    tostring(herbSkill),
+    tostring(miningSkill),
   }, "|")
 end
 
@@ -80,6 +91,18 @@ end
 function GoldMap.GatherEvaluator:EvaluateNode(nodeID, node)
   local filters = GoldMap:GetFilters()
   if not GoldMap:IsGatherProfessionEnabled(node.profession, filters) then
+    self.cache[nodeID] = {
+      revision = GoldMap.AHCache:GetRevision(),
+      filterSig = BuildFilterSignature(filters),
+      value = nil,
+    }
+    return nil
+  end
+
+  local requiredSkill = GoldMap.GetGatherNodeRequiredSkill and GoldMap:GetGatherNodeRequiredSkill(node) or nil
+  local playerSkill = GoldMap.GetGatherProfessionSkill and GoldMap:GetGatherProfessionSkill(node.profession) or 0
+  local skillEligible = GoldMap.IsGatherNodeSkillEligible and GoldMap:IsGatherNodeSkillEligible(node, filters) or true
+  if not skillEligible then
     self.cache[nodeID] = {
       revision = GoldMap.AHCache:GetRevision(),
       filterSig = BuildFilterSignature(filters),
@@ -277,6 +300,9 @@ function GoldMap.GatherEvaluator:EvaluateNode(nodeID, node)
     nodeID = nodeID,
     node = node,
     profession = node.profession,
+    requiredSkill = requiredSkill,
+    playerSkill = playerSkill,
+    skillEligible = skillEligible,
     evCopper = ev,
     hasPrice = hasAnyPrice,
     items = rows,

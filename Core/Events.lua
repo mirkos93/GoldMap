@@ -135,6 +135,12 @@ frame:SetScript("OnEvent", function(_, eventName, ...)
     return
   end
 
+  if eventName == "SKILL_LINES_CHANGED" then
+    GoldMap._professionSkillCache = nil
+    GoldMap:NotifyFiltersChanged()
+    return
+  end
+
 end)
 
 frame:RegisterEvent("ADDON_LOADED")
@@ -142,6 +148,7 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("AUCTION_HOUSE_SHOW")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 frame:RegisterEvent("MODIFIER_STATE_CHANGED")
+frame:RegisterEvent("SKILL_LINES_CHANGED")
 
 SLASH_GOLDMAP1 = "/goldmap"
 SLASH_GOLDMAP2 = "/gmfarm"

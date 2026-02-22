@@ -29,6 +29,7 @@ local PRESET_FILTER_KEYS = {
   "gatherMinSellSpeedTier",
   "minQuality",
   "gatherMinQuality",
+  "hideUnskilledGatherNodes",
   "showNoPricePins",
   "minMobLevel",
   "maxMobLevel",
@@ -37,6 +38,47 @@ local PRESET_FILTER_KEYS = {
   "minDifficultyTier",
   "maxDifficultyTier",
   "filterMode",
+}
+
+local QUALITY_OPTIONS = {
+  { value = 0, text = "Any" },
+  { value = 1, text = "Common+" },
+  { value = 2, text = "Uncommon+" },
+  { value = 3, text = "Rare+" },
+  { value = 4, text = "Epic" },
+}
+
+local SELL_SPEED_OPTIONS = {
+  { value = 0, text = "|cff9d9d9dNone (no minimum)|r" },
+  { value = 1, text = "|cffff3333Low or better|r" },
+  { value = 2, text = "|cffffb800Medium or better|r" },
+  { value = 3, text = "|cff1eff00High only|r" },
+}
+
+local RELIABILITY_OPTIONS = {
+  { value = 0, text = "|cff9d9d9dAny (include unknown)|r" },
+  { value = 1, text = "|cff1eff00Low or better|r" },
+  { value = 2, text = "|cff0070ddMedium or better|r" },
+  { value = 3, text = "|cffff8000High only|r" },
+}
+
+local FILTER_MODE_OPTIONS = {
+  { value = "ALL", text = "Match all selected filters (Narrow)" },
+  { value = "ANY", text = "Match any selected filter (Broad)" },
+}
+
+local DIFFICULTY_SCOPE_OPTIONS = {
+  { value = "ANY", text = "Any target type" },
+  { value = "SOLO_ONLY", text = "Solo-friendly targets only" },
+  { value = "GROUP_ONLY", text = "Group targets only" },
+}
+
+local DIFFICULTY_TIER_OPTIONS = {
+  { value = 1, text = "Trivial Solo" },
+  { value = 2, text = "Easy Solo" },
+  { value = 3, text = "Fair Fight" },
+  { value = 4, text = "Hard Solo / Old Elite" },
+  { value = 5, text = "Group Target" },
 }
 
 local function Trim(text)
@@ -73,6 +115,64 @@ local function ParseNumber(text, fallback)
     return fallback
   end
   return value
+end
+
+local function ClampInt(value, minValue, maxValue, fallback)
+  local n = tonumber(value)
+  if not n then
+    n = fallback
+  end
+  n = math.floor(n or fallback or minValue)
+  if n < minValue then
+    return minValue
+  end
+  if n > maxValue then
+    return maxValue
+  end
+  return n
+end
+
+local function NormalizeFilterDropdownValues(filters)
+  if type(filters) ~= "table" then
+    return
+  end
+
+  filters.minReliabilityTier = ClampInt(filters.minReliabilityTier, 0, 3, 0)
+  filters.gatherMinReliabilityTier = ClampInt(filters.gatherMinReliabilityTier, 0, 3, filters.minReliabilityTier)
+  filters.minSellSpeedTier = ClampInt(filters.minSellSpeedTier, 0, 3, 0)
+  filters.gatherMinSellSpeedTier = ClampInt(filters.gatherMinSellSpeedTier, 0, 3, filters.minSellSpeedTier)
+  filters.minQuality = ClampInt(filters.minQuality, 0, 4, 1)
+  filters.gatherMinQuality = ClampInt(filters.gatherMinQuality, 0, 4, filters.minQuality)
+
+  if filters.filterMode ~= "ALL" and filters.filterMode ~= "ANY" then
+    filters.filterMode = "ALL"
+  end
+
+  if filters.difficultyScope ~= "ANY" and filters.difficultyScope ~= "SOLO_ONLY" and filters.difficultyScope ~= "GROUP_ONLY" then
+    filters.difficultyScope = "ANY"
+  end
+
+  filters.minDifficultyTier = ClampInt(filters.minDifficultyTier, 1, 5, 1)
+  filters.maxDifficultyTier = ClampInt(filters.maxDifficultyTier, filters.minDifficultyTier, 5, 5)
+  if filters.maxDifficultyTier < filters.minDifficultyTier then
+    filters.maxDifficultyTier = filters.minDifficultyTier
+  end
+end
+
+local function OptionText(options, value, fallbackValue)
+  for _, entry in ipairs(options) do
+    if entry.value == value then
+      return entry.text
+    end
+  end
+  if fallbackValue ~= nil then
+    for _, entry in ipairs(options) do
+      if entry.value == fallbackValue then
+        return entry.text
+      end
+    end
+  end
+  return options[1] and options[1].text or ""
 end
 
 local function AddInputRow(self, parent, state, label, key)
@@ -163,18 +263,10 @@ end
 function GoldMap.FilterPanel:CreateQualityDropdown(parent, frameName, onValueSelected)
   local dropdown = CreateFrame("Frame", frameName, parent, "UIDropDownMenuTemplate")
 
-  local qualities = {
-    { value = 0, text = "Any" },
-    { value = 1, text = "Common+" },
-    { value = 2, text = "Uncommon+" },
-    { value = 3, text = "Rare+" },
-    { value = 4, text = "Epic" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 130)
 
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(qualities) do
+    for _, entry in ipairs(QUALITY_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -194,16 +286,9 @@ end
 function GoldMap.FilterPanel:CreateSellSpeedDropdown(parent, frameName, onValueSelected)
   local dropdown = CreateFrame("Frame", frameName, parent, "UIDropDownMenuTemplate")
 
-  local tiers = {
-    { value = 0, text = "|cff9d9d9dNone (no minimum)|r" },
-    { value = 1, text = "|cffff3333Low or better|r" },
-    { value = 2, text = "|cffffb800Medium or better|r" },
-    { value = 3, text = "|cff1eff00High only|r" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 200)
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(tiers) do
+    for _, entry in ipairs(SELL_SPEED_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -223,16 +308,9 @@ end
 function GoldMap.FilterPanel:CreateReliabilityDropdown(parent, frameName, onValueSelected)
   local dropdown = CreateFrame("Frame", frameName, parent, "UIDropDownMenuTemplate")
 
-  local tiers = {
-    { value = 0, text = "|cff9d9d9dAny (include unknown)|r" },
-    { value = 1, text = "|cff1eff00Low or better|r" },
-    { value = 2, text = "|cff0070ddMedium or better|r" },
-    { value = 3, text = "|cffff8000High only|r" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 200)
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(tiers) do
+    for _, entry in ipairs(RELIABILITY_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -252,15 +330,10 @@ end
 function GoldMap.FilterPanel:CreateFilterModeDropdown(parent)
   local dropdown = CreateFrame("Frame", "GoldMapFilterModeDropdown", parent, "UIDropDownMenuTemplate")
 
-  local modes = {
-    { value = "ALL", text = "Match all selected filters (Narrow)" },
-    { value = "ANY", text = "Match any selected filter (Broad)" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 260)
 
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(modes) do
+    for _, entry in ipairs(FILTER_MODE_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -279,15 +352,9 @@ end
 function GoldMap.FilterPanel:CreateDifficultyScopeDropdown(parent)
   local dropdown = CreateFrame("Frame", "GoldMapDifficultyScopeDropdown", parent, "UIDropDownMenuTemplate")
 
-  local modes = {
-    { value = "ANY", text = "Any target type" },
-    { value = "SOLO_ONLY", text = "Solo-friendly targets only" },
-    { value = "GROUP_ONLY", text = "Group targets only" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 250)
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(modes) do
+    for _, entry in ipairs(DIFFICULTY_SCOPE_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -306,17 +373,9 @@ end
 function GoldMap.FilterPanel:CreateDifficultyTierDropdown(parent, frameName, onValueSelected)
   local dropdown = CreateFrame("Frame", frameName, parent, "UIDropDownMenuTemplate")
 
-  local tiers = {
-    { value = 1, text = "Trivial Solo" },
-    { value = 2, text = "Easy Solo" },
-    { value = 3, text = "Fair Fight" },
-    { value = 4, text = "Hard Solo / Old Elite" },
-    { value = 5, text = "Group Target" },
-  }
-
   UIDropDownMenu_SetWidth(dropdown, 220)
   UIDropDownMenu_Initialize(dropdown, function(_, _, _)
-    for _, entry in ipairs(tiers) do
+    for _, entry in ipairs(DIFFICULTY_TIER_OPTIONS) do
       local info = UIDropDownMenu_CreateInfo()
       info.text = entry.text
       info.value = entry.value
@@ -392,11 +451,7 @@ function GoldMap.FilterPanel:ApplyPresetData(data)
   if data.hideRareMobs == nil then
     filters.hideRareMobs = false
   end
-  filters.minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
-  filters.maxDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
-  if filters.maxDifficultyTier < filters.minDifficultyTier then
-    filters.maxDifficultyTier = filters.minDifficultyTier
-  end
+  NormalizeFilterDropdownValues(filters)
   self.hasPendingInputChanges = false
   self:SyncInputsFromDB()
   GoldMap:NotifyFiltersChanged()
@@ -600,6 +655,7 @@ function GoldMap.FilterPanel:ApplyInputs()
   filters.minItemPriceGold = math.max(0, ParseNumber(self.inputs.minPrice:GetText(), filters.minItemPriceGold))
   filters.minMobLevel = math.max(1, math.min(63, math.floor(ParseNumber(self.inputs.minMobLevel:GetText(), filters.minMobLevel))))
   filters.maxMobLevel = math.max(filters.minMobLevel, math.min(63, math.floor(ParseNumber(self.inputs.maxMobLevel:GetText(), filters.maxMobLevel))))
+  NormalizeFilterDropdownValues(filters)
 
   self.hasPendingInputChanges = false
   self:SyncInputsFromDB()
@@ -608,11 +664,7 @@ end
 
 function GoldMap.FilterPanel:SyncInputsFromDB()
   local filters = GoldMap.db.filters
-  if filters.difficultyScope ~= "ANY" and filters.difficultyScope ~= "SOLO_ONLY" and filters.difficultyScope ~= "GROUP_ONLY" then
-    filters.difficultyScope = "ANY"
-  end
-  filters.minDifficultyTier = math.max(1, math.min(5, math.floor(tonumber(filters.minDifficultyTier) or 1)))
-  filters.maxDifficultyTier = math.max(filters.minDifficultyTier, math.min(5, math.floor(tonumber(filters.maxDifficultyTier) or 5)))
+  NormalizeFilterDropdownValues(filters)
   local showHerbTargets = filters.showHerbTargets
   local showOreTargets = filters.showOreTargets
   if showHerbTargets == nil then
@@ -650,37 +702,52 @@ function GoldMap.FilterPanel:SyncInputsFromDB()
   if self.inputs.hideRareMobs then
     self.inputs.hideRareMobs:SetChecked(filters.hideRareMobs == true)
   end
+  if self.inputs.hideUnskilledGatherNodes then
+    self.inputs.hideUnskilledGatherNodes:SetChecked(filters.hideUnskilledGatherNodes == true)
+  end
 
   UIDropDownMenu_SetSelectedValue(self.inputs.minQuality, filters.minQuality)
+  UIDropDownMenu_SetText(self.inputs.minQuality, OptionText(QUALITY_OPTIONS, filters.minQuality, 1))
   UIDropDownMenu_SetSelectedValue(self.inputs.gatherMinQuality, filters.gatherMinQuality or 1)
+  UIDropDownMenu_SetText(self.inputs.gatherMinQuality, OptionText(QUALITY_OPTIONS, filters.gatherMinQuality or 1, 1))
   if self.inputs.quickSellSpeed then
     UIDropDownMenu_SetSelectedValue(self.inputs.quickSellSpeed, filters.minSellSpeedTier or 0)
+    UIDropDownMenu_SetText(self.inputs.quickSellSpeed, OptionText(SELL_SPEED_OPTIONS, filters.minSellSpeedTier or 0, 0))
   end
   if self.inputs.quickReliability then
     UIDropDownMenu_SetSelectedValue(self.inputs.quickReliability, filters.minReliabilityTier or 0)
+    UIDropDownMenu_SetText(self.inputs.quickReliability, OptionText(RELIABILITY_OPTIONS, filters.minReliabilityTier or 0, 0))
   end
   if self.inputs.mobSellSpeed then
     UIDropDownMenu_SetSelectedValue(self.inputs.mobSellSpeed, filters.minSellSpeedTier or 0)
+    UIDropDownMenu_SetText(self.inputs.mobSellSpeed, OptionText(SELL_SPEED_OPTIONS, filters.minSellSpeedTier or 0, 0))
   end
   if self.inputs.mobReliability then
     UIDropDownMenu_SetSelectedValue(self.inputs.mobReliability, filters.minReliabilityTier or 0)
+    UIDropDownMenu_SetText(self.inputs.mobReliability, OptionText(RELIABILITY_OPTIONS, filters.minReliabilityTier or 0, 0))
   end
   if self.inputs.gatherSellSpeed then
     UIDropDownMenu_SetSelectedValue(self.inputs.gatherSellSpeed, filters.gatherMinSellSpeedTier or 0)
+    UIDropDownMenu_SetText(self.inputs.gatherSellSpeed, OptionText(SELL_SPEED_OPTIONS, filters.gatherMinSellSpeedTier or 0, 0))
   end
   if self.inputs.gatherReliability then
     UIDropDownMenu_SetSelectedValue(self.inputs.gatherReliability, filters.gatherMinReliabilityTier or 0)
+    UIDropDownMenu_SetText(self.inputs.gatherReliability, OptionText(RELIABILITY_OPTIONS, filters.gatherMinReliabilityTier or 0, 0))
   end
   if self.inputs.difficultyScope then
     UIDropDownMenu_SetSelectedValue(self.inputs.difficultyScope, filters.difficultyScope or "ANY")
+    UIDropDownMenu_SetText(self.inputs.difficultyScope, OptionText(DIFFICULTY_SCOPE_OPTIONS, filters.difficultyScope or "ANY", "ANY"))
   end
   if self.inputs.minDifficultyTier then
     UIDropDownMenu_SetSelectedValue(self.inputs.minDifficultyTier, filters.minDifficultyTier or 1)
+    UIDropDownMenu_SetText(self.inputs.minDifficultyTier, OptionText(DIFFICULTY_TIER_OPTIONS, filters.minDifficultyTier or 1, 1))
   end
   if self.inputs.maxDifficultyTier then
     UIDropDownMenu_SetSelectedValue(self.inputs.maxDifficultyTier, filters.maxDifficultyTier or 5)
+    UIDropDownMenu_SetText(self.inputs.maxDifficultyTier, OptionText(DIFFICULTY_TIER_OPTIONS, filters.maxDifficultyTier or 5, 5))
   end
   UIDropDownMenu_SetSelectedValue(self.inputs.filterMode, filters.filterMode or "ALL")
+  UIDropDownMenu_SetText(self.inputs.filterMode, OptionText(FILTER_MODE_OPTIONS, filters.filterMode or "ALL", "ALL"))
 end
 
 function GoldMap.FilterPanel:ApplyPreset(presetKey)
@@ -699,6 +766,7 @@ function GoldMap.FilterPanel:ApplyPreset(presetKey)
   end
 
   f.hideRareMobs = false
+  f.hideUnskilledGatherNodes = f.hideUnskilledGatherNodes == true
   f.showMobTargets = true
   f.showHerbTargets = true
   f.showOreTargets = true
@@ -1096,6 +1164,16 @@ function GoldMap.FilterPanel:BuildGatherPage(page)
   self.inputs.gatherMinQuality = qualityDropdown
   page.state.y = page.state.y - 42
 
+  local hideUnskilled = MakeCheckbox(page.content, "Hide nodes above my profession skill")
+  hideUnskilled:SetPoint("TOPLEFT", 10, page.state.y + 6)
+  hideUnskilled:SetScript("OnClick", function(selfButton)
+    GoldMap.db.filters.hideUnskilledGatherNodes = selfButton:GetChecked() and true or false
+    GoldMap:NotifyFiltersChanged()
+  end)
+  self.inputs.hideUnskilledGatherNodes = hideUnskilled
+  page.state.y = page.state.y - 30
+
+  AddHint(page.content, page.state, "When enabled, GoldMap hides herb/ore nodes that your current Herbalism/Mining skill cannot gather yet.")
   AddHint(page.content, page.state, "Use this tab separately from mob filters to prevent gathering nodes from being hidden by mob thresholds.")
   page.content:SetHeight(math.max(380, math.abs(page.state.y) + 24))
 end

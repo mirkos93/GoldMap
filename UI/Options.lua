@@ -175,6 +175,7 @@ function GoldMap.Options:EnsureHelpFrame()
       .. "Practical tips\n"
       .. "- Use presets for fast setup, then fine-tune in dedicated tabs.\n"
       .. "- Use separate visibility toggles for Mob, Herb, and Ore pins.\n"
+      .. "- In Gathering filters, enable \"Hide nodes above my profession skill\" to hide nodes you cannot gather yet.\n"
       .. "- If data looks stale, run another Auctionator scan and /goldmap scan.\n"
       .. "- Use /goldmap welcome to reopen the onboarding window anytime."
   )
@@ -361,7 +362,7 @@ function GoldMap.Options:Init()
   mapDesc:SetPoint("TOPLEFT", mapTitle, "BOTTOMLEFT", 0, -8)
   mapDesc:SetWidth(520)
   mapDesc:SetJustifyH("LEFT")
-  mapDesc:SetText("Adjust pin count, minimap range, and icon size. Each setting has both a slider and a numeric input.")
+  mapDesc:SetText("Adjust pin count, minimap range, icon size, and nearby-node tracking circle behavior. Each setting has both a slider and a numeric input.")
 
   local maxPinsLabel = mapSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   maxPinsLabel:SetPoint("TOPLEFT", mapDesc, "BOTTOMLEFT", 0, -16)
@@ -395,7 +396,22 @@ function GoldMap.Options:Init()
   local minimapSizeSlider = MakeSlider(mapSection, "GoldMapMiniSizeSlider", 8, 22, 1, 280)
   minimapSizeSlider:SetPoint("TOPLEFT", minimapSizeLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
 
-  local mapBottom = minimapSizeSlider:GetBottom() or 0
+  local trackingCircleToggle = MakeCheckbox(
+    mapSection,
+    "Use tracking circle on nearby herb/ore minimap pins",
+    "When close to a gathering node, replace the minimap icon with a circle (GatherMate2-style)"
+  )
+  trackingCircleToggle:SetPoint("TOPLEFT", minimapSizeSlider, "BOTTOMLEFT", 8, -24)
+
+  local trackingCircleDistanceLabel = mapSection:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  trackingCircleDistanceLabel:SetPoint("TOPLEFT", trackingCircleToggle, "BOTTOMLEFT", 0, -18)
+  trackingCircleDistanceLabel:SetText("Tracking circle distance (yards):")
+  local trackingCircleDistanceInput = MakeEditBox(mapSection, 64)
+  trackingCircleDistanceInput:SetPoint("LEFT", trackingCircleDistanceLabel, "RIGHT", 10, 0)
+  local trackingCircleDistanceSlider = MakeSlider(mapSection, "GoldMapMiniTrackDistanceSlider", 10, 300, 1, 280)
+  trackingCircleDistanceSlider:SetPoint("TOPLEFT", trackingCircleDistanceLabel, "BOTTOMLEFT", -8, SLIDER_TOP_MARGIN)
+
+  local mapBottom = trackingCircleDistanceSlider:GetBottom() or 0
   local mapTop = mapSection:GetTop() or 0
   mapSection:SetHeight(math.max(720, mapTop - mapBottom + 80))
 
@@ -667,6 +683,7 @@ function GoldMap.Options:Init()
 
     showPins:SetChecked(GoldMap.db.ui.showPins)
     showMinimapPins:SetChecked(GoldMap.db.ui.showMinimapPins)
+    trackingCircleToggle:SetChecked(GoldMap.db.ui.minimapTrackingCircleEnabled ~= false)
     showMinimapButton:SetChecked(not GoldMap.db.ui.hideMinimapButton)
     showItemTooltipSignals:SetChecked(GoldMap.db.ui.showItemTooltipMarket ~= false)
     advisorEnabled:SetChecked(GoldMap.db.scanner.scanAdvisorEnabled ~= false)
@@ -676,6 +693,7 @@ function GoldMap.Options:Init()
     minimapPinsInput:SetNumber(GoldMap.db.ui.minimapMaxPins)
     minimapRangeInput:SetNumber((GoldMap.db.ui.minimapRange or GoldMap.defaults.ui.minimapRange) * 100)
     minimapSizeInput:SetNumber(GoldMap.db.ui.minimapIconSize)
+    trackingCircleDistanceInput:SetNumber(GoldMap.db.ui.minimapTrackingCircleDistance or GoldMap.defaults.ui.minimapTrackingCircleDistance or 100)
     maxTooltipInput:SetNumber(GoldMap.db.ui.maxTooltipItems)
     worldHerbSpaceInput:SetNumber(GoldMap.db.ui.worldHerbPinSpacing or GoldMap.defaults.ui.worldHerbPinSpacing or 28)
     worldOreSpaceInput:SetNumber(GoldMap.db.ui.worldOrePinSpacing or GoldMap.defaults.ui.worldOrePinSpacing or 22)
@@ -691,6 +709,7 @@ function GoldMap.Options:Init()
     minimapPinsSlider:SetValue(GoldMap.db.ui.minimapMaxPins)
     minimapRangeSlider:SetValue((GoldMap.db.ui.minimapRange or GoldMap.defaults.ui.minimapRange) * 100)
     minimapSizeSlider:SetValue(GoldMap.db.ui.minimapIconSize)
+    trackingCircleDistanceSlider:SetValue(GoldMap.db.ui.minimapTrackingCircleDistance or GoldMap.defaults.ui.minimapTrackingCircleDistance or 100)
     maxTooltipSlider:SetValue(GoldMap.db.ui.maxTooltipItems)
     worldHerbSpaceSlider:SetValue(GoldMap.db.ui.worldHerbPinSpacing or GoldMap.defaults.ui.worldHerbPinSpacing or 28)
     worldOreSpaceSlider:SetValue(GoldMap.db.ui.worldOrePinSpacing or GoldMap.defaults.ui.worldOrePinSpacing or 22)
@@ -712,6 +731,7 @@ function GoldMap.Options:Init()
     SetSliderLabels("GoldMapMiniPinsSlider", "Minimap Pin Limit", "10", "300")
     SetSliderLabels("GoldMapMiniRangeSlider", "Minimap Range", "0.5%", "20%")
     SetSliderLabels("GoldMapMiniSizeSlider", "Minimap Icon Size", "8", "22")
+    SetSliderLabels("GoldMapMiniTrackDistanceSlider", "Tracking Circle Distance (yd)", "10", "300")
     SetSliderLabels("GoldMapWorldHerbSpacingSlider", "World Herb Spacing", "8", "64")
     SetSliderLabels("GoldMapWorldOreSpacingSlider", "World Ore Spacing", "8", "64")
     SetSliderLabels("GoldMapWorldMobSpacingSlider", "World Mob Spacing", "8", "64")
@@ -737,6 +757,11 @@ function GoldMap.Options:Init()
 
   showMinimapPins:SetScript("OnClick", function(selfButton)
     GoldMap.db.ui.showMinimapPins = selfButton:GetChecked() and true or false
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  trackingCircleToggle:SetScript("OnClick", function(selfButton)
+    GoldMap.db.ui.minimapTrackingCircleEnabled = selfButton:GetChecked() and true or false
     GoldMap:NotifyFiltersChanged()
   end)
 
@@ -811,6 +836,15 @@ function GoldMap.Options:Init()
     local value = tonumber(selfBox:GetText()) or GoldMap.defaults.ui.minimapIconSize
     value = Clamp(math.floor(value), 8, 22)
     GoldMap.db.ui.minimapIconSize = value
+    SyncControlsFromDB()
+    selfBox:ClearFocus()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  trackingCircleDistanceInput:SetScript("OnEnterPressed", function(selfBox)
+    local value = tonumber(selfBox:GetText()) or (GoldMap.defaults.ui.minimapTrackingCircleDistance or 100)
+    value = Clamp(math.floor(value + 0.5), 10, 300)
+    GoldMap.db.ui.minimapTrackingCircleDistance = value
     SyncControlsFromDB()
     selfBox:ClearFocus()
     GoldMap:NotifyFiltersChanged()
@@ -938,6 +972,15 @@ function GoldMap.Options:Init()
       return
     end
     GoldMap.db.ui.minimapIconSize = math.floor(value + 0.5)
+    SyncControlsFromDB()
+    GoldMap:NotifyFiltersChanged()
+  end)
+
+  trackingCircleDistanceSlider:SetScript("OnValueChanged", function(_, value)
+    if syncingControls then
+      return
+    end
+    GoldMap.db.ui.minimapTrackingCircleDistance = Clamp(math.floor(value + 0.5), 10, 300)
     SyncControlsFromDB()
     GoldMap:NotifyFiltersChanged()
   end)

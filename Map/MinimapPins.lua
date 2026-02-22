@@ -35,6 +35,9 @@ local MINIMAP_SIZE = {
   },
 }
 
+local GATHERMATE_TRACK_CIRCLE_TEXTURE = "Interface\\AddOns\\GatherMate2\\Artwork\\track_circle.tga"
+local FALLBACK_TRACK_CIRCLE_TEXTURE = "Interface\\COMMON\\Indicator-Yellow"
+
 local function GetVectorXY(vec, maybeY)
   if vec == nil then
     return nil, nil
@@ -119,6 +122,17 @@ local function GetIconForPayload(payload)
   return GoldMap:GetIconPath("pinBase", 64)
 end
 
+local function IsGatherMate2Installed()
+  if GetAddOnInfo then
+    local name = GetAddOnInfo("GatherMate2")
+    return name ~= nil
+  end
+  if C_AddOns and C_AddOns.DoesAddOnExist then
+    return C_AddOns.DoesAddOnExist("GatherMate2")
+  end
+  return false
+end
+
 local function GetCandidateMinimapSpacingPx(candidate)
   local ui = GoldMap.db and GoldMap.db.ui or {}
   if candidate and candidate.kind == "GATHER" then
@@ -179,6 +193,20 @@ function GoldMap.MinimapPins:GetHBDPins()
     return nil
   end
   return self.hbdPins
+end
+
+function GoldMap.MinimapPins:GetTrackingCircleTexturePath()
+  if self.trackingCircleTexturePath then
+    return self.trackingCircleTexturePath
+  end
+
+  if IsGatherMate2Installed() then
+    self.trackingCircleTexturePath = GATHERMATE_TRACK_CIRCLE_TEXTURE
+  else
+    self.trackingCircleTexturePath = FALLBACK_TRACK_CIRCLE_TEXTURE
+  end
+
+  return self.trackingCircleTexturePath
 end
 
 function GoldMap.MinimapPins:AttachPinToMinimap(pin, candidate)
@@ -540,6 +568,8 @@ function GoldMap.MinimapPins:ReleaseAllPins()
     pin:Hide()
     pin.payload = nil
     pin.candidate = nil
+    pin.valueHighEnabled = nil
+    pin.isTrackingCircle = nil
     pin.tintR, pin.tintG, pin.tintB = nil, nil, nil
     if pin.valueHigh then
       pin.valueHigh:Hide()
@@ -560,6 +590,8 @@ function GoldMap.MinimapPins:FinalizePins()
     pin:Hide()
     pin.payload = nil
     pin.candidate = nil
+    pin.valueHighEnabled = nil
+    pin.isTrackingCircle = nil
     pin.tintR, pin.tintG, pin.tintB = nil, nil, nil
     if pin.valueHigh then
       pin.valueHigh:Hide()
@@ -582,13 +614,81 @@ end
 
 function GoldMap.MinimapPins:GetRefreshInterval()
   if self.isMoving then
-    return 0.05
+    return 0.03
   end
-  return 0.10
+  return 0.08
 end
 
 function GoldMap.MinimapPins:RepositionActivePins()
   -- HereBeDragons-Pins handles minimap pin movement/rotation continuously.
+end
+
+function GoldMap.MinimapPins:ApplyTrackingCircleVisual(pin, candidate, iconSize, useTrackingCircle)
+  if not pin or not pin.icon then
+    return
+  end
+
+  if useTrackingCircle then
+    local circleSize = math.max(8, math.floor(iconSize * 0.78 + 0.5))
+    pin:SetSize(circleSize, circleSize)
+    ApplyPinHitRect(pin, circleSize)
+    pin.icon:SetTexture(self:GetTrackingCircleTexturePath())
+    pin.valueHigh:SetShown(false)
+    pin.isTrackingCircle = true
+  else
+    pin:SetSize(iconSize, iconSize)
+    ApplyPinHitRect(pin, iconSize)
+    pin.icon:SetTexture(GetIconForPayload(pin.payload) or pin.baseTexturePath)
+    pin.valueHigh:SetShown(pin.valueHighEnabled == true)
+    pin.isTrackingCircle = false
+  end
+
+  if pin.tintR and pin.tintG and pin.tintB then
+    pin.icon:SetVertexColor(pin.tintR, pin.tintG, pin.tintB, 0.95)
+  end
+end
+
+function GoldMap.MinimapPins:UpdateTrackingCircleVisuals()
+  if not self.initialized or self.activeCount <= 0 then
+    return
+  end
+  if not GoldMap.db or not GoldMap.db.ui or GoldMap.db.ui.showMinimapPins == false then
+    return
+  end
+
+  local iconSize = math.max(8, math.min(22, GoldMap.db.ui.minimapIconSize or 14))
+  local trackingCircleEnabled = GoldMap.db.ui.minimapTrackingCircleEnabled ~= false
+  local trackingCircleDistance = math.max(10, math.min(300, tonumber(GoldMap.db.ui.minimapTrackingCircleDistance) or 100))
+  local trackingCircleDistanceSquared = trackingCircleDistance * trackingCircleDistance
+
+  local px, py = nil, nil
+  if trackingCircleEnabled then
+    local playerLoc = self:GetPlayerLocation()
+    if playerLoc then
+      px, py = tonumber(playerLoc.wx), tonumber(playerLoc.wy)
+    end
+  end
+
+  for i = 1, self.activeCount do
+    local pin = self.pinPool[i]
+    local candidate = pin and pin.candidate or nil
+    if pin and candidate and candidate.kind == "GATHER" then
+      local useTrackingCircle = false
+      if trackingCircleEnabled and px and py then
+        local sx = tonumber(candidate.worldX)
+        local sy = tonumber(candidate.worldY)
+        if sx and sy then
+          local dx = px - sx
+          local dy = py - sy
+          useTrackingCircle = ((dx * dx) + (dy * dy)) <= trackingCircleDistanceSquared
+        end
+      end
+
+      if pin.isTrackingCircle ~= useTrackingCircle then
+        self:ApplyTrackingCircleVisual(pin, candidate, iconSize, useTrackingCircle)
+      end
+    end
+  end
 end
 
 function GoldMap.MinimapPins:RefreshNow()
@@ -639,6 +739,9 @@ function GoldMap.MinimapPins:RefreshNow()
 
   local range = math.max(0.005, math.min(0.2, GoldMap.db.ui.minimapRange or 0.035))
   local iconSize = math.max(8, math.min(22, GoldMap.db.ui.minimapIconSize or 14))
+  local trackingCircleEnabled = GoldMap.db.ui.minimapTrackingCircleEnabled ~= false
+  local trackingCircleDistance = math.max(10, math.min(300, tonumber(GoldMap.db.ui.minimapTrackingCircleDistance) or 100))
+  local trackingCircleDistanceSquared = trackingCircleDistance * trackingCircleDistance
   local maxPins = math.max(10, math.min(300, GoldMap.db.ui.minimapMaxPins or 80))
   local px = tonumber(playerLoc.wx)
   local py = tonumber(playerLoc.wy)
@@ -818,13 +921,21 @@ function GoldMap.MinimapPins:RefreshNow()
       valueHigh = (candidate.eval.evCopper or 0) >= (40 * 10000)
     end
     pin.tintR, pin.tintG, pin.tintB = r, g, b
-    pin.icon:SetTexture(GetIconForPayload(pin.payload) or pin.baseTexturePath)
     pin.icon:SetVertexColor(r, g, b, 0.95)
-    pin.valueHigh:SetShown(valueHigh)
+    pin.valueHighEnabled = valueHigh == true
+
+    local useTrackingCircle = trackingCircleEnabled
+      and candidate.kind == "GATHER"
+      and (candidate.distSquared or math.huge) <= trackingCircleDistanceSquared
+
+    self:ApplyTrackingCircleVisual(pin, candidate, iconSize, useTrackingCircle)
+
     if not self:AttachPinToMinimap(pin, candidate) then
       self.activeCount = self.activeCount - 1
       pin.payload = nil
       pin.candidate = nil
+      pin.valueHighEnabled = nil
+      pin.isTrackingCircle = nil
       pin:Hide()
       return false
     end
@@ -920,6 +1031,7 @@ function GoldMap.MinimapPins:OnEvent(eventName)
 
   if eventName == "PLAYER_STARTED_MOVING" then
     self.isMoving = true
+    self:RequestFullRefresh()
     return
   end
 
@@ -1004,8 +1116,10 @@ function GoldMap.MinimapPins:Init()
     if self.updateAccumulator >= interval then
       self.updateAccumulator = 0
 
+      self:UpdateTrackingCircleVisuals()
+
       local now = GetTime and GetTime() or 0
-      local fullInterval = self.isMoving and 0.35 or 0.8
+      local fullInterval = self.isMoving and 0.20 or 0.60
       if self.fullRefreshRequested or (now - (self.lastFullRefreshTime or 0) >= fullInterval) then
         self:RequestFullRefresh()
       end

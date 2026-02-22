@@ -230,6 +230,14 @@ function GoldMap.PinTooltip:RenderGatherInfo(tooltip, node, eval, context)
     else
       tooltip:AddLine(profession, 0.85, 0.85, 0.85)
     end
+
+    local requiredSkill = tonumber(eval.requiredSkill)
+    if requiredSkill and requiredSkill > 0 then
+      local currentSkill = tonumber(eval.playerSkill) or 0
+      local canGather = currentSkill >= requiredSkill
+      local r, g, b = canGather and 0.5 or 1.0, canGather and 0.95 or 0.35, canGather and 0.5 or 0.35
+      tooltip:AddLine(string.format("Required skill: %d (You: %d)", requiredSkill, currentSkill), r, g, b)
+    end
   end
 
   return self:RenderValueRows(tooltip, eval, {
