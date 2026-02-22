@@ -38,7 +38,7 @@ function GoldMap.Welcome:BuildFrame()
   end
 
   local frame = CreateFrame("Frame", "GoldMapWelcomeFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate")
-  frame:SetSize(650, 480)
+  frame:SetSize(660, 520)
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, 30)
   frame:SetFrameStrata("DIALOG")
   frame:SetFrameLevel(120)
@@ -101,47 +101,67 @@ function GoldMap.Welcome:BuildFrame()
     frame:Hide()
   end)
 
-  local intro = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-  intro:SetPoint("TOPLEFT", 26, -84)
-  intro:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
-  intro:SetJustifyH("LEFT")
-  intro:SetText("GoldMap helps you find the best farming targets by combining seed drop data and your local Auction House market prices.")
+  local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -74)
+  scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -40, 62)
 
-  local whatTitle = MakeSectionTitle(frame, "What GoldMap Does", intro, -18)
+  local scrollContent = CreateFrame("Frame", nil, scrollFrame)
+  scrollContent:SetSize(588, 760)
+  scrollFrame:SetScrollChild(scrollContent)
+
+  local intro = scrollContent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  intro:SetPoint("TOPLEFT", 4, -4)
+  intro:SetPoint("RIGHT", scrollContent, "RIGHT", -8, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetText("GoldMap highlights profitable farm routes on your World Map and Minimap using seed drop data plus your local Auction House market snapshot.")
+
+  local whatTitle = MakeSectionTitle(scrollContent, "What You Will See", intro, -18)
   local whatText = MakeBodyText(
-    frame,
-    "- Adds profitable target pins on both the World Map and Minimap.\n"
-      .. "- Includes mob drops and Herbalism/Mining nodes.\n"
-      .. "- Calculates Estimated Gold per kill using drop chance and market price snapshots.\n"
-      .. "- Shows detailed mob and drop insights in map and unit tooltips.",
+    scrollContent,
+    "- Pins for mob farms (value per kill).\n"
+      .. "- Pins for Herbalism and Mining nodes (value per node).\n"
+      .. "- Tooltip breakdown with item links, chance/yield, price, and contribution.\n"
+      .. "- Filters and presets to narrow results by value, reliability, speed, quality, and difficulty.\n"
+      .. "- Separate visibility toggles for Mob, Herb, and Ore pins.",
     whatTitle
   )
 
-  local howTitle = MakeSectionTitle(frame, "How It Works", whatText, -16)
+  local howTitle = MakeSectionTitle(scrollContent, "Quick Setup", whatText, -16)
   local howText = MakeBodyText(
-    frame,
-    "1. GoldMap loads seed drop and spawn data.\n"
-      .. "2. Run an Auctionator scan to refresh market data.\n"
-      .. "3. Use /goldmap scan to sync GoldMap with Auctionator cache.\n"
-      .. "4. Use filters to focus on the farming targets you want.",
+    scrollContent,
+    "1. Open Auction House and run an Auctionator scan.\n"
+      .. "2. Run /goldmap scan to sync GoldMap prices.\n"
+      .. "3. Open world map filters and select your farm profile.\n"
+      .. "4. Follow map/minimap pins and tooltip Estimated Gold details.",
     howTitle
   )
 
-  local importantTitle = MakeSectionTitle(frame, "Important", howText, -16)
+  local readingTitle = MakeSectionTitle(scrollContent, "How To Read GoldMap Values", howText, -16)
+  local readingText = MakeBodyText(
+    scrollContent,
+    "- Estimated Gold is an expected value, not guaranteed loot.\n"
+      .. "- Data reliability: Unknown / Low / Medium / High.\n"
+      .. "- Likely to sell: Low (red), Medium (orange), High (green).\n"
+      .. "- Hold Shift on tooltips for advanced market details.",
+    readingTitle
+  )
+
+  local importantTitle = MakeSectionTitle(scrollContent, "Important Notes", readingText, -16)
   local importantText = MakeBodyText(
-    frame,
+    scrollContent,
     "- GoldMap relies on Auctionator as required market data source.\n"
-      .. "- Before scanning, some drops may show \"No price yet\" and Estimated Gold as \"--\".\n"
-      .. "- Data reliability starts as Unknown/Low on first install and grows with repeated Auction House scans across sessions.\n"
-      .. "- To reach High confidence, keep market data fresh and scan regularly.\n"
-      .. "- Confidence is based on freshness/history/exactness signals, not direct global sell-through data.\n"
-      .. "- Tooltips use clear labels and colors for reliability and likely selling speed.\n"
-      .. "- Hold Shift on a tooltip for technical details.\n"
-      .. "- Estimated Gold is a practical estimate, not guaranteed profit per kill.\n"
-      .. "- Non-attackable targets are always filtered out.\n"
-      .. "- After scanning, map pins and tooltips refresh automatically.",
+      .. "- /goldmap scan syncs from Auctionator cache. It does not scan AH by itself.\n"
+      .. "- Before your first scan, some entries show \"No price yet\" and Estimated Gold as \"--\".\n"
+      .. "- Outlier guard reduces distorted values from absurd AH listings.\n"
+      .. "- Non-attackable / non-practical city targets are always filtered out.",
     importantTitle
   )
+  scrollContent:SetScript("OnShow", function(content)
+    local top = intro:GetTop() or 0
+    local bottom = importantText:GetBottom() or 0
+    local height = math.max(760, math.ceil(top - bottom + 20))
+    content:SetHeight(height)
+  end)
 
   local buttonsBar = CreateFrame("Frame", nil, frame)
   buttonsBar:SetPoint("BOTTOMLEFT", 22, 16)
@@ -175,7 +195,7 @@ function GoldMap.Welcome:BuildFrame()
 
   local footer = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   footer:SetPoint("BOTTOMLEFT", buttonsBar, "TOPLEFT", 4, 8)
-  footer:SetText("Tip: You can always reopen settings from the GoldMap minimap button.")
+  footer:SetText("Tip: reopen this window anytime with /goldmap welcome.")
 
   frame:Hide()
   self.frame = frame

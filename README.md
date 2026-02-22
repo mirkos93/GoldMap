@@ -69,6 +69,7 @@ Auctionator:
   - `Low/Medium/High`: confidence based on age/history/exactness/availability signals
 - **Likely to sell**:
   - `Low` (red), `Medium` (orange), `High` (green)
+- **No price yet**: no usable local market sample for that item yet
 
 GoldMap also applies an anti-outlier guard so one insane auction does not inflate value estimates.
 

@@ -36,6 +36,7 @@ It shows profitable targets directly on **World Map** and **Minimap**, combining
 - Confidence and sell-speed labels are based on local historical signals
 - Outlier guard reduces distorted values from extreme AH listings
 - Non-attackable/non-practical city targets are excluded by design
+- If an item has no usable sample yet, tooltips show **No price yet** and value as `--`
 
 ## Quick Setup
 
