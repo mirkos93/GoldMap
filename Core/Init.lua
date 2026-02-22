@@ -27,7 +27,7 @@ if type(GoldMap.GatherEvaluator.EvaluateNodeByID) ~= "function" then
 end
 
 GoldMap.addonName = addonName
-GoldMap.version = "0.1.6-beta"
+GoldMap.version = "0.1.7-beta"
 
 GoldMapData = GoldMapData or {}
 
@@ -124,6 +124,8 @@ GoldMap.media.icons = {
 
 local HERBALISM_SKILL_LINE_ID = 182
 local MINING_SKILL_LINE_ID = 186
+local HERBALISM_SPELL_ID = 2366
+local MINING_SPELL_ID = 2575
 
 local HERB_REQUIRED_SKILL_BY_NAME = {
   ["silverleaf"] = 1,
@@ -169,6 +171,52 @@ local MINING_REQUIRED_SKILL_BY_NAME = {
   ["rich thorium vein"] = 275,
   ["dark iron deposit"] = 230,
 }
+
+local function NormalizeGatherProfession(profession)
+  if profession == nil then
+    return nil
+  end
+
+  if type(profession) == "number" then
+    if profession == HERBALISM_SKILL_LINE_ID then
+      return "HERBALISM"
+    end
+    if profession == MINING_SKILL_LINE_ID then
+      return "MINING"
+    end
+    return nil
+  end
+
+  local raw = tostring(profession)
+  if raw == "HERBALISM" or raw == "MINING" then
+    return raw
+  end
+
+  local normalized = string.lower((raw:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")):gsub("^%s+", ""):gsub("%s+$", ""))
+  if normalized == "" then
+    return nil
+  end
+
+  if normalized == "herbalism" then
+    return "HERBALISM"
+  end
+  if normalized == "mining" then
+    return "MINING"
+  end
+
+  if GetSpellInfo then
+    local herbName = GetSpellInfo(HERBALISM_SPELL_ID)
+    local miningName = GetSpellInfo(MINING_SPELL_ID)
+    if herbName and normalized == string.lower(herbName) then
+      return "HERBALISM"
+    end
+    if miningName and normalized == string.lower(miningName) then
+      return "MINING"
+    end
+  end
+
+  return nil
+end
 
 function GoldMap:GetIconPath(iconKey, size)
   local filename = self.media.icons[iconKey]
@@ -221,6 +269,7 @@ function GoldMap:InitializeSavedVariables()
 
   if self.db and self.db.filters then
     self.db.filters.hideRareMobs = self.db.filters.hideRareMobs == true
+    self.db.filters.hideUnskilledGatherNodes = self.db.filters.hideUnskilledGatherNodes == true
   end
 
   if self.db and self.db.ui then
@@ -279,6 +328,7 @@ function GoldMap:GetFilters()
 end
 
 function GoldMap:IsGatherProfessionEnabled(profession, filters)
+  profession = NormalizeGatherProfession(profession) or profession
   filters = filters or self:GetFilters()
   local herbEnabled = filters.showHerbTargets
   local oreEnabled = filters.showOreTargets
@@ -301,6 +351,11 @@ function GoldMap:IsGatherProfessionEnabled(profession, filters)
 end
 
 function GoldMap:GetGatherProfessionSkill(profession)
+  profession = NormalizeGatherProfession(profession)
+  if profession ~= "HERBALISM" and profession ~= "MINING" then
+    return 0, false
+  end
+
   self._professionSkillCache = self._professionSkillCache or {}
   local cache = self._professionSkillCache
   local now = GetTime and GetTime() or 0
@@ -317,18 +372,40 @@ function GoldMap:GetGatherProfessionSkill(profession)
 
   local herbalismSkill, miningSkill = 0, 0
   local hasHerbalism, hasMining = false, false
+  local hasProfessionAPIData = false
 
   if GetProfessions and GetProfessionInfo then
-    local primary1, primary2 = GetProfessions()
-    local slots = { primary1, primary2 }
+    local primary1, primary2, archaeology, fishing, cooking, firstAid = GetProfessions()
+    local slots = { primary1, primary2, archaeology, fishing, cooking, firstAid }
     for _, slot in ipairs(slots) do
       if slot then
-        local _, _, skillLevel, _, _, _, skillLine = GetProfessionInfo(slot)
+        local name, _, skillLevel, _, _, _, skillLine = GetProfessionInfo(slot)
+        local professionKey = NormalizeGatherProfession(skillLine) or NormalizeGatherProfession(name)
         local normalizedSkill = math.max(0, math.floor(tonumber(skillLevel) or 0))
-        if skillLine == HERBALISM_SKILL_LINE_ID then
+        if professionKey == "HERBALISM" then
+          hasProfessionAPIData = true
           hasHerbalism = true
           herbalismSkill = normalizedSkill
-        elseif skillLine == MINING_SKILL_LINE_ID then
+        elseif professionKey == "MINING" then
+          hasProfessionAPIData = true
+          hasMining = true
+          miningSkill = normalizedSkill
+        end
+      end
+    end
+  end
+
+  if GetNumSkillLines and GetSkillLineInfo and (not hasProfessionAPIData or (not hasHerbalism and not hasMining)) then
+    local numSkillLines = tonumber(GetNumSkillLines()) or 0
+    for i = 1, numSkillLines do
+      local name, isHeader, _, rank = GetSkillLineInfo(i)
+      if not isHeader then
+        local professionKey = NormalizeGatherProfession(name)
+        local normalizedSkill = math.max(0, math.floor(tonumber(rank) or 0))
+        if professionKey == "HERBALISM" and (not hasHerbalism or normalizedSkill > herbalismSkill) then
+          hasHerbalism = true
+          herbalismSkill = normalizedSkill
+        elseif professionKey == "MINING" and (not hasMining or normalizedSkill > miningSkill) then
           hasMining = true
           miningSkill = normalizedSkill
         end
@@ -366,10 +443,11 @@ function GoldMap:GetGatherNodeRequiredSkill(node)
     return nil
   end
 
-  if node.profession == "HERBALISM" then
+  local profession = NormalizeGatherProfession(node.profession)
+  if profession == "HERBALISM" then
     return HERB_REQUIRED_SKILL_BY_NAME[name]
   end
-  if node.profession == "MINING" then
+  if profession == "MINING" then
     return MINING_REQUIRED_SKILL_BY_NAME[name]
   end
   return nil

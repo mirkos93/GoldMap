@@ -233,7 +233,8 @@ function GoldMap.PinTooltip:RenderGatherInfo(tooltip, node, eval, context)
 
     local requiredSkill = tonumber(eval.requiredSkill)
     if requiredSkill and requiredSkill > 0 then
-      local currentSkill = tonumber(eval.playerSkill) or 0
+      local currentSkill = (GoldMap.GetGatherProfessionSkill and GoldMap:GetGatherProfessionSkill(node.profession)) or tonumber(eval.playerSkill) or 0
+      currentSkill = tonumber(currentSkill) or 0
       local canGather = currentSkill >= requiredSkill
       local r, g, b = canGather and 0.5 or 1.0, canGather and 0.95 or 0.35, canGather and 0.5 or 0.35
       tooltip:AddLine(string.format("Required skill: %d (You: %d)", requiredSkill, currentSkill), r, g, b)

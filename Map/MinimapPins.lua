@@ -792,7 +792,9 @@ function GoldMap.MinimapPins:RefreshNow()
               instanceID = playerLoc.instanceID,
             })
           end
-        elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID] and GoldMap:IsGatherProfessionEnabled(gatherNodes[spawn.nodeID].profession, filters) then
+        elseif entry.kind == "GATHER" and allowGather and gatherEvaluator and gatherNodes and gatherNodes[spawn.nodeID]
+          and GoldMap:IsGatherProfessionEnabled(gatherNodes[spawn.nodeID].profession, filters)
+          and (not GoldMap.IsGatherNodeSkillEligible or GoldMap:IsGatherNodeSkillEligible(gatherNodes[spawn.nodeID], filters)) then
           local eval = evalByNode[spawn.nodeID]
           if eval == nil then
             eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)

@@ -4,10 +4,9 @@ GoldMap = GoldMap or {}
 GoldMap.GatherEvaluator = GoldMap.GatherEvaluator or {}
 
 local function BuildFilterSignature(filters)
-  local hideUnskilled = filters.hideUnskilledGatherNodes == true
   local herbSkill = 0
   local miningSkill = 0
-  if hideUnskilled and GoldMap.GetGatherProfessionSkill then
+  if GoldMap.GetGatherProfessionSkill then
     herbSkill = GoldMap:GetGatherProfessionSkill("HERBALISM") or 0
     miningSkill = GoldMap:GetGatherProfessionSkill("MINING") or 0
   end

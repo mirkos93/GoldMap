@@ -467,7 +467,9 @@ function GoldMap.WorldMapPins:RefreshNow()
       local px, py = self:GetProjectedPoint(spawn, currentMapID)
       if px and py and self:IsPointAllowedOnMap(currentMapID, px, py) then
         local node = gatherNodes[spawn.nodeID]
-        if node and GoldMap:IsGatherProfessionEnabled(node.profession, filters) then
+        if node
+          and GoldMap:IsGatherProfessionEnabled(node.profession, filters)
+          and (not GoldMap.IsGatherNodeSkillEligible or GoldMap:IsGatherNodeSkillEligible(node, filters)) then
           local eval = evalByNode[spawn.nodeID]
           if eval == nil then
             eval = gatherEvaluator:EvaluateNodeByID(spawn.nodeID)
