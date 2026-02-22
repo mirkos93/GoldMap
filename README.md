@@ -4,118 +4,108 @@
   <img src="logo.png" alt="GoldMap logo" width="220" />
 </p>
 
-**GoldMap** is a World of Warcraft Classic Era addon that helps you farm smarter, not harder.
-It shows profitable farm targets directly on the **World Map** and **Minimap** by combining seed loot/gather data with your local Auction House prices.
+**GoldMap** is a WoW Classic Era addon focused on one goal: help you pick better gold farms, faster.
 
-If your goal is simple, **more gold per hour with less guesswork**, GoldMap is built for exactly that.
+It overlays profitable targets on the **World Map** and **Minimap** by combining:
+- curated mob/gather data (drops, yields, spawn positions)
+- your local Auction House market data from **Auctionator**
 
-## Why Players Like GoldMap
+If you want less guessing and more efficient farming routes, GoldMap is built for that.
 
-- It turns farming from "random grinding" into **data-driven routing**.
-- It highlights where value is, **right now**, based on your AH snapshot.
-- It keeps the workflow in-game: map pins, tooltips, filters, and Auctionator-powered sync.
+## Why GoldMap
+
+- Pin-based farming workflow directly on map and minimap
+- Separate support for:
+  - mob farms (value per kill)
+  - gathering farms (value per node, herbs and ore)
+- Rich tooltips with item links, chance/yield, market price, contribution
+- Strong filtering with clear labels (non-technical friendly)
+- Auctionator-backed market sync with confidence and sell-speed scoring
+- Outlier protection: absurd AH listings no longer distort value estimates
 
 ## Core Features
 
-- Profit-oriented pins on **World Map** and **Minimap**
-- Support for:
-  - mob farming (loot EV per kill)
-  - gathering farming (herbs/ore EV per node)
-- Rich tooltips with:
-  - top valuable items
-  - chance/yield and quantity context
-  - market value and EV contribution
-- Powerful filters with friendly labels:
-  - mob droprate range
-  - EV range (mob and gathering)
-  - item price floor
-  - minimum selling speed (`None/Low/Medium/High`)
-  - quality floor
-  - mob level range
-  - filter logic mode: `Match all` / `Match any`
-- Auctionator-backed market sync (`/goldmap scan`)
-- First-run welcome screen + Help/Glossary
-- Always excludes non-attackable/non-practical farm targets
+- World Map + Minimap pins
+- Mob and gathering filters split into dedicated tabs
+- Presets + custom presets (save/update/delete)
+- Data reliability and selling speed indicators
+- Shift details in tooltips for advanced diagnostics
+- Scan advisor to suggest when market data is stale
+- Always excludes non-attackable/non-practical farm NPCs
+
+## Requirements
+
+- **WoW Classic Era**
+- **Auctionator** (required)
+
+Auctionator:
+- GitHub: https://github.com/TheMouseNest/Auctionator/
+- CurseForge: https://www.curseforge.com/wow/addons/auctionator
 
 ## Quick Start
 
 1. Install GoldMap in `Interface/AddOns/GoldMap`
-2. Install Auctionator (required dependency)
-3. Launch the game and run `/goldmap`
-4. Run an Auctionator scan to refresh market data
-5. Run `/goldmap scan` to sync GoldMap from Auctionator cache
-6. Open map filters and tune your farm strategy
-7. Follow high-value pins on map/minimap
+2. Install/enable Auctionator
+3. Open game and run `/goldmap`
+4. Run an Auctionator scan at AH
+5. Run `/goldmap scan` to sync GoldMap prices
+6. Open map filters and tune your route
 
-### Auctionator Links
+## Filters At A Glance
 
-- GitHub: https://github.com/TheMouseNest/Auctionator/
-- CurseForge: https://www.curseforge.com/wow/addons/auctionator
+- **Quick tab**: core constraints for fast setup
+- **Mobs tab**: level range, fight type/difficulty, value filters
+- **Gathering tab**: node-value filters independent from mobs
+- **Advanced tab**:
+  - `Match all selected filters (Narrow)`
+  - `Match any selected filter (Broad)`
+- **Presets tab**: built-in and custom profiles
 
-## Recommended Flow (Fastest Results)
+## Tooltip Labels (Simple Meaning)
 
-1. Run an Auctionator scan first
-2. Run `/goldmap scan` to import latest cache
-3. Set minimum item price
-4. Set minimum estimated gold
-5. Reduce clutter with quality and level filters
-6. Move zone-to-zone using map pins and tooltip EV
+- **Estimated Gold**: expected value from chance/yield and market prices
+- **Data reliability**:
+  - `Unknown`: no market data yet
+  - `Low/Medium/High`: confidence based on age/history/exactness/availability signals
+- **Likely to sell**:
+  - `Low` (red), `Medium` (orange), `High` (green)
 
-## How To Reach High Confidence
+GoldMap also applies an anti-outlier guard so one insane auction does not inflate value estimates.
 
-GoldMap confidence is based on local Auctionator history quality.
-
-1. Run scans regularly (not one single scan).
-2. Keep scans recent (old snapshots lose confidence).
-3. Sync often with `/goldmap scan`.
-4. Focus filters on items with stable demand and repeated observations.
-5. Confidence uses price age, history depth, exact snapshot coverage, and observed availability.
-6. It is not a direct "items sold per day" metric (that signal is not exposed by Auctionator API).
-7. Hold `Shift` on tooltips for technical market details; default tooltip stays simple.
-
-## What "Estimated Gold" Means
-
-GoldMap uses expected value:
-
-`Estimated Gold = sum(chance_or_yield * average_count * market_price)`
-
-It is an estimate, not a guarantee, but it is a very practical way to compare farm targets consistently.
-
-## Slash Commands
+## Commands
 
 - `/goldmap` or `/gmfarm`: open settings
-- `/goldmap filters`: open map filters popup
-- `/goldmap scan`: sync prices from Auctionator cache
-- `/goldmap stop`: no-op (legacy command)
-- `/goldmap refresh`: force map refresh
+- `/goldmap filters`: open map filter popup
+- `/goldmap scan`: sync tracked prices from Auctionator
+- `/goldmap advisor`: print advisor status now
+- `/goldmap refresh`: force map/minimap refresh
 - `/goldmap debug`: toggle GoldMap debug logs
 - `/goldmap luadebug`: toggle global Lua errors
 - `/goldmap welcome`: show welcome window again
 
+## Development
+
+GoldMap architecture is split by responsibility:
+- `Data/`: static seed data (runtime-ready Lua)
+- `AHScan/`: Auctionator integration, cache, confidence/sell-speed logic
+- `Core/`: initialization, evaluators, runtime events, advisor
+- `Map/`: world map and minimap pin rendering
+- `UI/`: options, filters, tooltips, overlays
+
+### Suggested Improvements
+
+- Add route optimization pathing between high-value nearby points
+- Add smarter per-zone density adaptation based on zoom/context
+- Add optional profile export/import for filter presets
+- Extend gathering support in future to Fishing and Skinning
+
 ## Compatibility
 
-- Game target: **WoW Classic Era**
+- Target: **WoW Classic Era**
 - Not designed for Retail
 - Not designed for Season of Discovery
 
-## Share GoldMap
-
-If GoldMap improves your farm routes, please help it grow:
-
-- Share it with guildmates and friends
-- Post feedback and screenshots
-- Open issues with reproducible steps when you find edge cases
-
-Every report helps improve route quality, scan reliability, and overall farming UX.
-
----
-
-### Future Features
-
-- Fishing support
-- Skinning support
-
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
-See `LICENSE` for full terms.
+This project is licensed under **GNU GPL v3.0**.  
+See `LICENSE`.

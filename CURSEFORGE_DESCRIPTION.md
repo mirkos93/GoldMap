@@ -1,62 +1,61 @@
-# GoldMap (Classic Era)
+# GoldMap (WoW Classic Era)
 
 <p align="center">
   <img src="logo.png" alt="GoldMap logo" width="220" />
 </p>
 
-GoldMap helps you find the best farming mobs in WoW Classic Era by combining:
+GoldMap helps you farm gold with less guesswork.
 
-- drop chances from a curated seed dataset
-- spawn positions on map and minimap
-- your local Auction House market prices
+It shows profitable targets directly on **World Map** and **Minimap**, combining:
+- curated drop/yield + spawn data
+- your local Auction House market data from **Auctionator** (required)
 
-The result is a practical, in-game farming overlay focused on **estimated gold per kill**.
+## What You Get
 
-## Why use GoldMap
+- Mob farm pins (value per kill)
+- Gathering pins for herbs and ore (value per node)
+- Clear tooltips with:
+  - item links
+  - chance/yield and count context
+  - market value and contribution
+- Filters built for real gameplay:
+  - droprate range
+  - estimated gold range
+  - minimum item price
+  - quality floor
+  - reliability floor
+  - selling speed floor
+  - mob level + difficulty
+  - narrow/broad logic mode
+- Presets + custom presets
+- Market freshness advisor
 
-- You see profitable farm targets directly on the map.
-- You can filter aggressively (or broadly) depending on your goal.
-- Tooltips explain exactly where value comes from (drop chance, price, estimated contribution).
+## Market Data and Stability
 
-## Main Features
+- GoldMap syncs with Auctionator via `/goldmap scan`
+- Confidence and sell-speed labels are based on local historical signals
+- Outlier guard reduces distorted values from extreme AH listings
+- Non-attackable/non-practical city targets are excluded by design
 
-- World Map and Minimap farm pins
-- Rich pin and mob tooltips
-- Estimated Gold-per-kill calculation
-- Filters:
-  - Min/Max droprate
-  - Min/Max Estimated Gold per kill
-  - Min item price
-  - Min selling speed (None/Low/Medium/High)
-  - Min item quality
-  - Min/Max mob level
-  - Include targets with no market price yet
-  - Non-attackable targets are always excluded
-  - Narrow mode (match all filters) / Broad mode (match any filter)
-- Auctionator-backed market sync (`/goldmap scan`)
-- Market confidence labels (Low/Medium/High)
+## Quick Setup
 
-## What “Estimated Gold” means
+1. Install and enable Auctionator
+2. Run Auctionator scan at AH
+3. Run `/goldmap scan`
+4. Open filters and start farming
 
-Estimated Gold = Expected Value per kill.
+Auctionator:
+- GitHub: https://github.com/TheMouseNest/Auctionator/
+- CurseForge: https://www.curseforge.com/wow/addons/auctionator
 
-GoldMap computes:
+## Commands
 
-`sum(drop chance * average drop count * market price)`
+- `/goldmap`
+- `/goldmap filters`
+- `/goldmap scan`
+- `/goldmap advisor`
+- `/goldmap refresh`
+- `/goldmap debug`
+- `/goldmap luadebug`
 
-So you can compare farms by average value, not just by single lucky drops.
-
-## Auction House Data
-
-- Auctionator is required.
-- Auctionator GitHub: https://github.com/TheMouseNest/Auctionator/
-- Auctionator CurseForge: https://www.curseforge.com/wow/addons/auctionator
-- Run Auctionator scans, then use `/goldmap scan` to sync into GoldMap.
-- If no market data exists yet, items show “No price yet” and Estimated Gold shows “--”.
-- Hold `Shift` on tooltips for detailed market diagnostics.
-
-## Notes
-
-- Built for **WoW Classic Era**.
-- All labels and settings are in English.
-- Designed for map-first farming workflow and quick decision making.
+Built for **WoW Classic Era**.
