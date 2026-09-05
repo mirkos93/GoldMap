@@ -110,3 +110,6 @@ GoldMap architecture is split by responsibility:
 
 This project is licensed under **GNU GPL v3.0**.  
 See `LICENSE`.
+
+
+<!-- Security scan triggered at 2026-09-05 07:46:39 -->
